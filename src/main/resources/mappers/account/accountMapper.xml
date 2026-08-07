@@ -108,4 +108,11 @@
         AND account_no IS NULL
         AND opened_at IS NULL
     </update>
+
+    <select id="selectCiHashByCustomerId" parameterType="Long" resultType="String">
+        SELECT
+        ci_hash
+        FROM customer
+        WHERE customer_id = #{customerId}
+    </select>
 </mapper>

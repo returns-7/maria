@@ -16,7 +16,7 @@ public interface AccountService {
   BigDecimal getAvailableLimit(Long customerId);
 
   // 고객 마이페이지용 한도 변경: APPLIED, OPENED 상태에서만 허용
-  AccountResponseDTO updateAccountLimit(Long customerId, BigDecimal expectedCurrentLimit, BigDecimal newLimitAmount);
+  AccountResponseDTO updateAccountLimit(AccountRequestDTO accountRequestDTO);
 
   // 관리자 대리 신청과 사용자 본인 신청이 공통으로 사용
   AccountResponseDTO applyAccount(AccountRequestDTO requestDTO);

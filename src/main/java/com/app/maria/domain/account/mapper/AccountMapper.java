@@ -48,4 +48,7 @@ public interface AccountMapper {
 
   //관리자 반려 판정 오버라이드
   int overrideToOpened(AccountDTO accountDTO);
+
+  // customerId를 통해 ci_hash 값 가져오기
+  String selectCiHashByCustomerId(Long customerId);
 }
