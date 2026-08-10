@@ -3,10 +3,13 @@ package com.app.maria.domain.settlement.component;
 import com.app.maria.domain.sellorder.type.SellOrderStatus;
 import com.app.maria.domain.settlement.dto.KrwExchangeDTO;
 import com.app.maria.domain.settlement.dto.SettlementJoinDTO;
+import com.app.maria.domain.settlement.exception.SettlementAccountMismatchException;
+import com.app.maria.domain.settlement.exception.SettlementAccountNotFoundException;
 import com.app.maria.domain.settlement.exception.SettlementStateConflictException;
 import com.app.maria.domain.settlement.mapper.KrwExchangeMapper;
 import com.app.maria.domain.settlement.mapper.SettlementItemMapper;
 import com.app.maria.domain.settlement.type.SettlementStatus;
+import com.app.maria.global.clock.service.BusinessClockService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,10 +20,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -36,6 +41,8 @@ class SettlementTransactionExecutorTest {
 
   @Mock
   private SettlementCalculator settlementCalculator;
+  @Mock
+  private BusinessClockService businessClockService;
 
   private SettlementTransactionExecutor executor;
 
@@ -44,8 +51,10 @@ class SettlementTransactionExecutorTest {
     executor = new SettlementTransactionExecutor(
         krwExchangeMapper,
         settlementItemMapper,
-        settlementCalculator
+        settlementCalculator,
+        businessClockService
     );
+    lenient().when(businessClockService.now()).thenReturn(LocalDateTime.of(2026, 8, 9, 9, 0));
   }
 
   @Test
@@ -117,13 +126,35 @@ class SettlementTransactionExecutorTest {
     verify(settlementItemMapper, never()).updateItemResult(any());
   }
 
+  @Test
+  void throwsAccountMismatchExceptionWhenExchangeAndTargetAccountsDiffer() {
+    SettlementJoinDTO target = target();
+    target.setAccountId(21L);
+    when(krwExchangeMapper.selectExchangeByIdForUpdate(10L))
+        .thenReturn(Optional.of(exchange(SettlementStatus.PROVISIONAL)));
+
+    assertThatThrownBy(() -> executor.execute(target, new BigDecimal("1400")))
+        .isInstanceOf(SettlementAccountMismatchException.class);
+  }
+
+  @Test
+  void throwsAccountNotFoundExceptionWhenLockedAccountDoesNotExist() {
+    SettlementJoinDTO target = target();
+    when(krwExchangeMapper.selectExchangeByIdForUpdate(10L))
+        .thenReturn(Optional.of(exchange(SettlementStatus.PROVISIONAL)));
+    when(krwExchangeMapper.selectAccountAmountForUpdate(20L)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> executor.execute(target, new BigDecimal("1400")))
+        .isInstanceOf(SettlementAccountNotFoundException.class);
+  }
+
   private SettlementJoinDTO target() {
     return SettlementJoinDTO.builder()
         .itemId(30L)
         .batchId(40L)
         .exchangeId(10L)
         .accountId(20L)
-        .purchaseFxRate(new BigDecimal("1350"))
+        .settlementFxRate(new BigDecimal("1350"))
         .sellOrderStatus(SellOrderStatus.EXECUTED)
         .build();
   }

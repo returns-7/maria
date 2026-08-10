@@ -5,6 +5,7 @@ import com.app.maria.domain.settlement.dto.SettlementItemDTO;
 import org.apache.ibatis.annotations.Mapper;
 
 import java.util.List;
+import java.util.Optional;
 
 @Mapper
 public interface SettlementItemMapper {
@@ -15,7 +16,25 @@ public interface SettlementItemMapper {
 
   int updateItemResult(SettlementItemDTO item);
 
+  int markPendingItemsFailed(SettlementItemDTO item);
+
+  int insertRetryItem(SettlementItemDTO item);
+
+  int insertRetryItemsForFailedBatch(Long batchId);
+
+  Optional<SettlementItemDTO> selectItemById(Long itemId);
+
+  Optional<SettlementItemDTO> selectItemByIdForUpdate(Long itemId);
+
+  List<SettlementItemDTO> selectItemsByExchangeIdForUpdate(Long exchangeId);
+
+  boolean existsSuccessfulItemByExchangeId(Long exchangeId);
+
+  boolean existsPendingItemByExchangeId(Long exchangeId);
+
   int countPendingItems(Long batchId);
 
   int countFailedItems(Long batchId);
+
+  int countLatestFailedItems(Long batchId);
 }

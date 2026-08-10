@@ -10,15 +10,15 @@ import java.math.RoundingMode;
 @Component
 public class SettlementCalculator {
   private static final int FOREIGN_SCALE = 8;
-  private static final int KRW_SCALE = 2;
+  private static final int KRW_SCALE = 0;
   private static final RoundingMode ROUNDING_MODE = RoundingMode.HALF_UP;
 
-  public BigDecimal calculateFinalAmount(BigDecimal provisionalAmount, BigDecimal purchaseFxRate, BigDecimal finalRate) {
+  public BigDecimal calculateFinalAmount(BigDecimal provisionalAmount, BigDecimal settlementFxRate, BigDecimal finalRate) {
     validatePositive(provisionalAmount, "provisionalAmount");
-    validatePositive(purchaseFxRate, "purchaseFxRate");
+    validatePositive(settlementFxRate, "settlementFxRate");
     validatePositive(finalRate, "finalRate");
 
-    BigDecimal provisionalRate = purchaseFxRate.multiply(ProvisionalRate.PROVISIONAL_RATE.getValue());
+    BigDecimal provisionalRate = settlementFxRate.multiply(ProvisionalRate.PROVISIONAL_RATE.getValue());
 
     BigDecimal foreignAmount = provisionalAmount.divide(provisionalRate, FOREIGN_SCALE, ROUNDING_MODE);
 

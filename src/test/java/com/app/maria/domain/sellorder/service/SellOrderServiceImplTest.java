@@ -12,6 +12,7 @@ import com.app.maria.domain.sellorder.exception.SellOrderException;
 import com.app.maria.domain.sellorder.exception.SellOrderNotFoundException;
 import com.app.maria.domain.sellorder.mapper.SellOrderMapper;
 import com.app.maria.domain.sellorder.type.SellOrderStatus;
+import com.app.maria.domain.settlement.service.ProvisionalExchangeService;
 import com.app.maria.global.client.exchange.ExchangeRateClient;
 import com.app.maria.global.client.kis.KisPriceClient;
 import com.app.maria.global.clock.service.BusinessClockService;
@@ -60,6 +61,9 @@ class SellOrderServiceImplTest {
 
     @Mock
     BusinessClockService businessClockService;
+
+    @Mock
+    ProvisionalExchangeService provisionalExchangeService;
 
     @InjectMocks
     SellOrderServiceImpl sellOrderService;
@@ -120,6 +124,7 @@ class SellOrderServiceImplTest {
         assertThat(first.getProcessedAt()).isEqualTo(NOW);
 
         verify(inboundMapper, times(1)).decreaseCurrentQty(1L, new BigDecimal("10"));
+        verify(provisionalExchangeService, times(1)).createProvisionalExchange(any(SellOrderDTO.class));
 
         ArgumentCaptor<SellOrderDTO> captor = ArgumentCaptor.forClass(SellOrderDTO.class);
         verify(sellOrderMapper, times(1)).insertSellOrder(captor.capture());
@@ -159,6 +164,7 @@ class SellOrderServiceImplTest {
         verify(inboundMapper, times(1)).decreaseCurrentQty(1L, new BigDecimal("6"));
         verify(inboundMapper, times(1)).decreaseCurrentQty(2L, new BigDecimal("4"));
         verify(sellOrderMapper, times(2)).insertSellOrder(any());
+        verify(provisionalExchangeService, times(2)).createProvisionalExchange(any(SellOrderDTO.class));
     }
 
     @Test

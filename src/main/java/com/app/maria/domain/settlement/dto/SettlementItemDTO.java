@@ -1,6 +1,7 @@
 package com.app.maria.domain.settlement.dto;
 
 import com.app.maria.domain.settlement.type.SettlementItemResult;
+import com.app.maria.domain.settlement.type.SettlementFailureCode;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -18,4 +19,6 @@ public class SettlementItemDTO {
   private Long exchangeId;
   private SettlementItemResult result;
   private LocalDateTime processedAt;
+  private SettlementFailureCode failureCode;
+  private String failureMessage;
 }
