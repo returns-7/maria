@@ -7,6 +7,7 @@ import com.app.maria.domain.settlement.dto.SettlementItemDTO;
 import com.app.maria.domain.settlement.dto.SettlementJoinDTO;
 import com.app.maria.domain.settlement.type.BatchStatus;
 import com.app.maria.domain.settlement.type.SettlementItemResult;
+import com.app.maria.domain.settlement.type.SettlementFailureCode;
 import com.app.maria.domain.settlement.type.SettlementStatus;
 import org.apache.ibatis.datasource.pooled.PooledDataSource;
 import org.apache.ibatis.io.Resources;
@@ -30,6 +31,11 @@ import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -154,7 +160,7 @@ class SettlementMapperTest {
     assertThat(target.getProvisionalAmount()).isEqualByComparingTo("2700000.00");
     assertThat(target.getProvisionalAt()).isEqualTo(LocalDateTime.of(2026, 8, 2, 15, 30));
     assertThat(target.getSettlementStatus()).isEqualTo(SettlementStatus.PROVISIONAL);
-    assertThat(target.getPurchaseFxRate()).isEqualByComparingTo("1350.0000");
+    assertThat(target.getSettlementFxRate()).isEqualByComparingTo("1350.0000");
     assertThat(target.getSellOrderStatus()).isEqualTo(SellOrderStatus.EXECUTED);
     assertThat(target.getPurchaseCurrency()).isEqualTo("USD");
     assertThat(settlementJoinMapper.selectItemDetail(targetQuery)).contains(target);
@@ -263,6 +269,94 @@ class SettlementMapperTest {
     assertThat(settlementBatchMapper.updateBatchStatus(batch)).isOne();
   }
 
+  @Test
+  @DisplayName("실패 Item 재처리는 새 이력을 만들고 진행 중 또는 성공한 동일 환전의 중복 재처리를 막는다")
+  void createsOnlyOneRetryItemForFailedExchange() {
+    SettlementBatchDTO batch = insertRunningBatch("settlement-20260803-retry");
+    settlementItemMapper.insertItemsForTargets(batch);
+    SettlementItemDTO failedItem = settlementItemMapper.selectPendingItems(pendingCursor(batch.getBatchId(), 0L)).get(0);
+    failedItem.setResult(SettlementItemResult.FAILED);
+    failedItem.setProcessedAt(CUTOFF.plusHours(10));
+    failedItem.setFailureCode(SettlementFailureCode.EXCHANGE_RATE_NOT_FOUND);
+    failedItem.setFailureMessage("환율 없음");
+    assertThat(settlementItemMapper.updateItemResult(failedItem)).isOne();
+    batch.setStatus(BatchStatus.FAILED);
+    batch.setFailureMessage("정산 Item 실패 1건 발생");
+    assertThat(settlementBatchMapper.updateBatchStatus(batch)).isOne();
+
+    SettlementItemDTO retry = SettlementItemDTO.builder()
+        .batchId(batch.getBatchId()).itemId(failedItem.getItemId()).build();
+    assertThat(settlementItemMapper.insertRetryItem(retry)).isOne();
+    assertThat(retry.getItemId()).isNotEqualTo(failedItem.getItemId());
+    assertThat(settlementItemMapper.selectItemById(retry.getItemId())).hasValueSatisfying(item ->
+        assertThat(item.getResult()).isNull());
+
+    SettlementItemDTO duplicate = SettlementItemDTO.builder()
+        .batchId(batch.getBatchId()).itemId(failedItem.getItemId()).build();
+    assertThat(settlementItemMapper.insertRetryItem(duplicate)).isZero();
+
+    retry.setResult(SettlementItemResult.SUCCESS);
+    retry.setProcessedAt(CUTOFF.plusHours(11));
+    assertThat(settlementItemMapper.updateItemResult(retry)).isOne();
+    assertThat(settlementBatchMapper.refreshBatchStatusAfterRetry(batch.getBatchId())).isOne();
+    assertThat(settlementBatchMapper.selectBatchById(batch.getBatchId())).hasValueSatisfying(refreshed -> {
+      assertThat(refreshed.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+      assertThat(refreshed.getFailureMessage()).isNull();
+      assertThat(refreshed.getTotalCount()).isOne();
+      assertThat(refreshed.getSuccessCount()).isOne();
+      assertThat(refreshed.getFailedCount()).isZero();
+      assertThat(refreshed.getProcessedCount()).isOne();
+    });
+    SettlementItemDTO afterSuccess = SettlementItemDTO.builder()
+        .batchId(batch.getBatchId()).itemId(failedItem.getItemId()).build();
+    assertThat(settlementItemMapper.insertRetryItem(afterSuccess)).isZero();
+  }
+
+  @Test
+  @DisplayName("동일 업무일 Guard를 동시에 잠그면 두 번째 실행은 기존 RUNNING Batch를 확인한다")
+  void concurrentBusinessDateGuardPreventsSecondRunningBatch() throws Exception {
+    LocalDate businessDate = CUTOFF.toLocalDate();
+    settlementBatchGuardMapper.ensureGuard(businessDate);
+    sqlSession.commit();
+
+    CountDownLatch firstLocked = new CountDownLatch(1);
+    CountDownLatch releaseFirst = new CountDownLatch(1);
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<Void> first = executor.submit(() -> {
+        try (SqlSession session = sqlSessionFactory.openSession(false)) {
+          SettlementBatchGuardMapper guardMapper = session.getMapper(SettlementBatchGuardMapper.class);
+          SettlementBatchMapper batchMapper = session.getMapper(SettlementBatchMapper.class);
+          guardMapper.selectGuardForUpdate(businessDate).orElseThrow();
+          SettlementBatchDTO batch = SettlementBatchDTO.builder()
+              .executedAt(CUTOFF.plusHours(9)).status(BatchStatus.RUNNING).runId("concurrent-first").build();
+          batchMapper.insertBatch(batch);
+          firstLocked.countDown();
+          releaseFirst.await(3, TimeUnit.SECONDS);
+          session.commit();
+        }
+        return null;
+      });
+
+      Future<Boolean> second = executor.submit(() -> {
+        firstLocked.await(3, TimeUnit.SECONDS);
+        try (SqlSession session = sqlSessionFactory.openSession(false)) {
+          SettlementBatchGuardMapper guardMapper = session.getMapper(SettlementBatchGuardMapper.class);
+          SettlementBatchMapper batchMapper = session.getMapper(SettlementBatchMapper.class);
+          guardMapper.selectGuardForUpdate(businessDate).orElseThrow();
+          return batchMapper.selectRunningBatchByBusinessDate(businessDate).isPresent();
+        }
+      });
+
+      assertThat(firstLocked.await(3, TimeUnit.SECONDS)).isTrue();
+      releaseFirst.countDown();
+      first.get(3, TimeUnit.SECONDS);
+      assertThat(second.get(3, TimeUnit.SECONDS)).isTrue();
+    } finally {
+      executor.shutdownNow();
+    }
+  }
+
   private SettlementBatchDTO insertRunningBatch(String runId) {
     return insertBatch(runId, CUTOFF.plusHours(9));
   }
@@ -295,7 +389,7 @@ class SettlementMapperTest {
           CREATE TABLE account (
               account_id BIGINT PRIMARY KEY AUTO_INCREMENT,
               status VARCHAR(20) NOT NULL,
-              amount DECIMAL(15, 2) NOT NULL DEFAULT 0
+              amount DECIMAL(15, 0) NOT NULL DEFAULT 0
           )
           """);
       statement.execute("""
@@ -308,7 +402,7 @@ class SettlementMapperTest {
           CREATE TABLE sell_order (
               order_id BIGINT PRIMARY KEY AUTO_INCREMENT,
               inbound_detail_id BIGINT NOT NULL,
-              purchase_fx_rate DECIMAL(15, 4),
+              settlement_fx_rate DECIMAL(15, 4),
               status VARCHAR(20) NOT NULL
           )
           """);
@@ -320,7 +414,7 @@ class SettlementMapperTest {
               provisional_amount DECIMAL(15, 2) NOT NULL,
               provisional_at DATETIME NOT NULL,
               final_rate DECIMAL(15, 6),
-              final_amount DECIMAL(15, 2),
+              final_amount DECIMAL(15, 0),
               final_at DATETIME,
               settlement_status VARCHAR(20) NOT NULL
           )
@@ -330,7 +424,8 @@ class SettlementMapperTest {
               batch_id BIGINT PRIMARY KEY AUTO_INCREMENT,
               executed_at DATETIME NOT NULL,
               status VARCHAR(20) NOT NULL,
-              run_id VARCHAR(50) NOT NULL UNIQUE
+              run_id VARCHAR(50) NOT NULL UNIQUE,
+              failure_message VARCHAR(500)
           )
           """);
       statement.execute("""
@@ -346,15 +441,15 @@ class SettlementMapperTest {
               exchange_id BIGINT NOT NULL,
               result VARCHAR(10),
               processed_at DATETIME,
-              CONSTRAINT uk_settlement_item_batch_exchange
-                  UNIQUE (batch_id, exchange_id)
+              failure_code VARCHAR(50),
+              failure_message VARCHAR(500)
           )
           """);
       statement.execute("""
           CREATE TABLE left_amount (
               left_amount_id BIGINT PRIMARY KEY AUTO_INCREMENT,
               exchange_id BIGINT NOT NULL UNIQUE,
-              cur_amount DECIMAL(15, 2) NOT NULL
+              cur_amount DECIMAL(15, 0) NOT NULL UNIQUE
           )
           """);
 
@@ -368,7 +463,7 @@ class SettlementMapperTest {
           """);
       statement.execute("""
           INSERT INTO sell_order (
-              order_id, inbound_detail_id, purchase_fx_rate, status
+              order_id, inbound_detail_id, settlement_fx_rate, status
           ) VALUES
               (1, 1, 1350.0000, 'EXECUTED'),
               (2, 1, NULL, 'RECEIVED'),

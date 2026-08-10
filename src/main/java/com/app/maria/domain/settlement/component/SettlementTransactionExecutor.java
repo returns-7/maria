@@ -11,6 +11,7 @@ import com.app.maria.domain.settlement.mapper.KrwExchangeMapper;
 import com.app.maria.domain.settlement.mapper.SettlementItemMapper;
 import com.app.maria.domain.settlement.type.SettlementItemResult;
 import com.app.maria.domain.settlement.type.SettlementStatus;
+import com.app.maria.global.clock.service.BusinessClockService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -30,6 +31,7 @@ public class SettlementTransactionExecutor {
   private final KrwExchangeMapper krwExchangeMapper;
   private final SettlementItemMapper settlementItemMapper;
   private final SettlementCalculator settlementCalculator;
+  private final BusinessClockService businessClockService;
 
   @Transactional(transactionManager = "transactionManager", propagation = Propagation.REQUIRES_NEW)
   public void execute(SettlementJoinDTO target, BigDecimal finalRate) {
@@ -56,8 +58,8 @@ public class SettlementTransactionExecutor {
     // 모든 정산 경로에서 exchange -> account 순서로 잠금을 획득한다.
     krwExchangeMapper.selectAccountAmountForUpdate(exchange.getAccountId()).orElseThrow(() -> new InvalidSettlementException("계좌 조회 실패"));
 
-    BigDecimal finalAmount = settlementCalculator.calculateFinalAmount(exchange.getProvisionalAmount(), target.getPurchaseFxRate(), finalRate);
-    LocalDateTime settledAt = LocalDateTime.now();
+    BigDecimal finalAmount = settlementCalculator.calculateFinalAmount(exchange.getProvisionalAmount(), target.getSettlementFxRate(), finalRate);
+    LocalDateTime settledAt = businessClockService.now();
 
     exchange.setFinalRate(finalRate);
     exchange.setFinalAmount(finalAmount);
@@ -80,7 +82,7 @@ public class SettlementTransactionExecutor {
   }
 
   private void markItemSuccess(Long itemId) {
-    markItemSuccess(itemId, LocalDateTime.now());
+    markItemSuccess(itemId, businessClockService.now());
   }
 
   private void markItemSuccess(Long itemId, LocalDateTime processedAt) {

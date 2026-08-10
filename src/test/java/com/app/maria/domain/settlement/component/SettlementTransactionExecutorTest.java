@@ -7,6 +7,7 @@ import com.app.maria.domain.settlement.exception.SettlementStateConflictExceptio
 import com.app.maria.domain.settlement.mapper.KrwExchangeMapper;
 import com.app.maria.domain.settlement.mapper.SettlementItemMapper;
 import com.app.maria.domain.settlement.type.SettlementStatus;
+import com.app.maria.global.clock.service.BusinessClockService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -36,6 +38,8 @@ class SettlementTransactionExecutorTest {
 
   @Mock
   private SettlementCalculator settlementCalculator;
+  @Mock
+  private BusinessClockService businessClockService;
 
   private SettlementTransactionExecutor executor;
 
@@ -44,8 +48,10 @@ class SettlementTransactionExecutorTest {
     executor = new SettlementTransactionExecutor(
         krwExchangeMapper,
         settlementItemMapper,
-        settlementCalculator
+        settlementCalculator,
+        businessClockService
     );
+    when(businessClockService.now()).thenReturn(LocalDateTime.of(2026, 8, 9, 9, 0));
   }
 
   @Test
@@ -123,7 +129,7 @@ class SettlementTransactionExecutorTest {
         .batchId(40L)
         .exchangeId(10L)
         .accountId(20L)
-        .purchaseFxRate(new BigDecimal("1350"))
+        .settlementFxRate(new BigDecimal("1350"))
         .sellOrderStatus(SellOrderStatus.EXECUTED)
         .build();
   }

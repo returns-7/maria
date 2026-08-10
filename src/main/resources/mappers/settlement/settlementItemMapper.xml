@@ -10,11 +10,15 @@
             batch_id,
             exchange_id,
             result,
-            processed_at
+            processed_at,
+            failure_code,
+            failure_message
         )
         SELECT
             #{batchId},
             ke.exchange_id,
+            NULL,
+            NULL,
             NULL,
             NULL
         FROM krw_exchange ke
@@ -38,7 +42,9 @@
             batch_id,
             exchange_id,
             result,
-            processed_at
+            processed_at,
+            failure_code,
+            failure_message
         FROM settlement_item
         WHERE batch_id = #{batchId}
           AND result IS NULL
@@ -50,11 +56,87 @@
     <update id="updateItemResult" parameterType="SettlementItemDTO">
         UPDATE settlement_item
         SET result = #{result},
-            processed_at = #{processedAt}
+            processed_at = #{processedAt},
+            failure_code = #{failureCode},
+            failure_message = #{failureMessage}
         WHERE item_id = #{itemId}
           AND result IS NULL
           AND processed_at IS NULL
     </update>
+
+    <update id="markPendingItemsFailed" parameterType="SettlementItemDTO">
+        UPDATE settlement_item
+        SET result = #{result},
+            processed_at = #{processedAt},
+            failure_code = #{failureCode},
+            failure_message = #{failureMessage}
+        WHERE batch_id = #{batchId}
+          AND result IS NULL
+          AND processed_at IS NULL
+    </update>
+
+    <insert id="insertRetryItem" parameterType="SettlementItemDTO" useGeneratedKeys="true" keyProperty="itemId" keyColumn="item_id">
+        INSERT INTO settlement_item (batch_id, exchange_id, result, processed_at, failure_code, failure_message)
+        SELECT #{batchId}, failed.exchange_id, NULL, NULL, NULL, NULL
+        FROM settlement_item failed
+        WHERE failed.item_id = #{itemId}
+          AND failed.batch_id = #{batchId}
+          AND failed.result = 'FAILED'
+          AND NOT EXISTS (
+              SELECT 1 FROM settlement_item succeeded
+              WHERE succeeded.exchange_id = failed.exchange_id AND succeeded.result = 'SUCCESS'
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM settlement_item pending
+              WHERE pending.exchange_id = failed.exchange_id AND pending.result IS NULL
+          )
+    </insert>
+
+    <insert id="insertRetryItemsForFailedBatch" parameterType="Long">
+        INSERT INTO settlement_item (batch_id, exchange_id, result, processed_at, failure_code, failure_message)
+        SELECT latest.batch_id, latest.exchange_id, NULL, NULL, NULL, NULL
+        FROM settlement_item latest
+        WHERE latest.batch_id = #{batchId}
+          AND latest.result = 'FAILED'
+          AND NOT EXISTS (
+              SELECT 1 FROM settlement_item newer
+              WHERE newer.batch_id = latest.batch_id
+                AND newer.exchange_id = latest.exchange_id
+                AND newer.item_id &gt; latest.item_id
+          )
+    </insert>
+
+    <select id="selectItemById" parameterType="Long" resultType="SettlementItemDTO">
+        SELECT item_id, batch_id, exchange_id, result, processed_at, failure_code, failure_message
+        FROM settlement_item
+        WHERE item_id = #{itemId}
+    </select>
+
+    <select id="selectItemByIdForUpdate" parameterType="Long" resultType="SettlementItemDTO">
+        SELECT item_id, batch_id, exchange_id, result, processed_at, failure_code, failure_message
+        FROM settlement_item
+        WHERE item_id = #{itemId}
+        FOR UPDATE
+    </select>
+
+    <select id="selectItemsByExchangeIdForUpdate" parameterType="Long" resultType="SettlementItemDTO">
+        SELECT item_id, batch_id, exchange_id, result, processed_at, failure_code, failure_message
+        FROM settlement_item
+        WHERE exchange_id = #{exchangeId}
+        FOR UPDATE
+    </select>
+
+    <select id="existsSuccessfulItemByExchangeId" parameterType="Long" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM settlement_item WHERE exchange_id = #{exchangeId} AND result = 'SUCCESS'
+        )
+    </select>
+
+    <select id="existsPendingItemByExchangeId" parameterType="Long" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM settlement_item WHERE exchange_id = #{exchangeId} AND result IS NULL
+        )
+    </select>
 
     <select id="countPendingItems" parameterType="Long" resultType="int">
         SELECT COUNT(*)
@@ -68,6 +150,20 @@
         FROM settlement_item
         WHERE batch_id = #{batchId}
           AND result = 'FAILED'
+    </select>
+
+    <select id="countLatestFailedItems" parameterType="Long" resultType="int">
+        SELECT COUNT(*)
+        FROM settlement_item latest
+        WHERE latest.batch_id = #{batchId}
+          AND latest.result = 'FAILED'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM settlement_item newer
+              WHERE newer.batch_id = latest.batch_id
+                AND newer.exchange_id = latest.exchange_id
+                AND newer.item_id &gt; latest.item_id
+          )
     </select>
 
 </mapper>

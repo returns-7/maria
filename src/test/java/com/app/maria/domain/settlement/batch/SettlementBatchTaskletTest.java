@@ -1,6 +1,7 @@
 package com.app.maria.domain.settlement.batch;
 
 import com.app.maria.domain.settlement.component.SettlementFailureRecorder;
+import com.app.maria.domain.settlement.component.SettlementBatchStatusUpdater;
 import com.app.maria.domain.settlement.component.SettlementTransactionExecutor;
 import com.app.maria.domain.settlement.dto.SettlementBatchDTO;
 import com.app.maria.domain.settlement.dto.SettlementItemDTO;
@@ -49,6 +50,7 @@ class SettlementBatchTaskletTest {
   @Mock private ExchangeRateProvider exchangeRateProvider;
   @Mock private SettlementTransactionExecutor settlementTransactionExecutor;
   @Mock private SettlementFailureRecorder settlementFailureRecorder;
+  @Mock private SettlementBatchStatusUpdater settlementBatchStatusUpdater;
   @Mock private StepContribution contribution;
 
   private StepExecution stepExecution;
@@ -62,7 +64,8 @@ class SettlementBatchTaskletTest {
         settlementJoinMapper,
         exchangeRateProvider,
         settlementTransactionExecutor,
-        settlementFailureRecorder
+        settlementFailureRecorder,
+        settlementBatchStatusUpdater
     );
     JobParameters jobParameters = new JobParametersBuilder()
         .addLong("batchId", 1L)
@@ -91,7 +94,7 @@ class SettlementBatchTaskletTest {
     assertThat(stepExecution.getExecutionContext().getLong("settlement.lastItemId"))
         .isEqualTo(10L);
     verify(settlementTransactionExecutor).execute(target, new BigDecimal("1400"));
-    verify(settlementFailureRecorder, never()).markFailed(any());
+    verify(settlementFailureRecorder, never()).markFailed(any(), any());
   }
 
   @Test
@@ -99,14 +102,12 @@ class SettlementBatchTaskletTest {
     when(settlementBatchMapper.selectBatchById(1L)).thenReturn(Optional.of(batch()));
     when(settlementItemMapper.selectPendingItems(any())).thenReturn(List.of());
     when(settlementItemMapper.countPendingItems(1L)).thenReturn(0);
-    when(settlementItemMapper.countFailedItems(1L)).thenReturn(0);
-    when(settlementBatchMapper.updateBatchStatus(any())).thenReturn(1);
 
     RepeatStatus status = tasklet.execute(contribution,
         new ChunkContext(new StepContext(stepExecution)));
 
     assertThat(status).isEqualTo(RepeatStatus.FINISHED);
-    verify(settlementBatchMapper).updateBatchStatus(any());
+    verify(settlementBatchStatusUpdater).completeFromLatestItems(1L);
   }
 
   @Test
@@ -146,7 +147,7 @@ class SettlementBatchTaskletTest {
         new ChunkContext(new StepContext(stepExecution)));
 
     assertThat(status).isEqualTo(RepeatStatus.CONTINUABLE);
-    verify(settlementFailureRecorder).markFailed(10L);
+    verify(settlementFailureRecorder).markFailed(eq(10L), any(Exception.class));
     verify(settlementTransactionExecutor, never()).execute(any(), any());
   }
 
@@ -155,15 +156,10 @@ class SettlementBatchTaskletTest {
     when(settlementBatchMapper.selectBatchById(1L)).thenReturn(Optional.of(batch()));
     when(settlementItemMapper.selectPendingItems(any())).thenReturn(List.of());
     when(settlementItemMapper.countPendingItems(1L)).thenReturn(0);
-    when(settlementItemMapper.countFailedItems(1L)).thenReturn(1);
-    when(settlementBatchMapper.updateBatchStatus(any())).thenReturn(1);
 
     tasklet.execute(contribution, new ChunkContext(new StepContext(stepExecution)));
 
-    org.mockito.ArgumentCaptor<SettlementBatchDTO> captor =
-        org.mockito.ArgumentCaptor.forClass(SettlementBatchDTO.class);
-    verify(settlementBatchMapper).updateBatchStatus(captor.capture());
-    assertThat(captor.getValue().getStatus()).isEqualTo(BatchStatus.FAILED);
+    verify(settlementBatchStatusUpdater).completeFromLatestItems(1L);
   }
 
   @Test
@@ -176,8 +172,18 @@ class SettlementBatchTaskletTest {
         tasklet.execute(contribution, new ChunkContext(new StepContext(stepExecution))))
         .isInstanceOf(SettlementStateConflictException.class);
 
-    verify(settlementItemMapper, never()).countFailedItems(1L);
-    verify(settlementBatchMapper, never()).updateBatchStatus(any());
+    verify(settlementBatchStatusUpdater, never()).completeFromLatestItems(any());
+  }
+
+  @Test
+  void rejectsJobWhenRunIdDoesNotMatchCurrentBatchRunId() {
+    SettlementBatchDTO batch = batch();
+    batch.setRunId("new-run-id");
+    when(settlementBatchMapper.selectBatchById(1L)).thenReturn(Optional.of(batch));
+
+    assertThatThrownBy(() ->
+        tasklet.execute(contribution, new ChunkContext(new StepContext(stepExecution))))
+        .isInstanceOf(SettlementStateConflictException.class);
   }
 
   private SettlementBatchDTO batch() {

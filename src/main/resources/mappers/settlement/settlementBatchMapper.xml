@@ -5,24 +5,57 @@
 
 <mapper namespace="com.app.maria.domain.settlement.mapper.SettlementBatchMapper">
 
+    <sql id="batchStatisticsColumns">
+        sb.batch_id,
+        sb.executed_at,
+        sb.status,
+        sb.run_id,
+        sb.failure_message,
+        COALESCE(stats.total_count, 0) AS total_count,
+        COALESCE(stats.success_count, 0) AS success_count,
+        COALESCE(stats.failed_count, 0) AS failed_count,
+        COALESCE(stats.processed_count, 0) AS processed_count
+    </sql>
+
+    <sql id="latestItemStatisticsJoin">
+        LEFT JOIN (
+            SELECT
+                latest.batch_id,
+                COUNT(*) AS total_count,
+                SUM(latest.result = 'SUCCESS') AS success_count,
+                SUM(latest.result = 'FAILED') AS failed_count,
+                SUM(latest.result IS NOT NULL) AS processed_count
+            FROM settlement_item latest
+            INNER JOIN (
+                SELECT batch_id, exchange_id, MAX(item_id) AS latest_item_id
+                FROM settlement_item
+                GROUP BY batch_id, exchange_id
+            ) newest ON newest.latest_item_id = latest.item_id
+            GROUP BY latest.batch_id
+        ) stats ON stats.batch_id = sb.batch_id
+    </sql>
+
     <select id="selectBatches" resultType="SettlementBatchDTO">
         SELECT
-            batch_id,
-            executed_at,
-            status,
-            run_id
-        FROM settlement_batch
-        ORDER BY batch_id DESC
+            <include refid="batchStatisticsColumns"/>
+        FROM settlement_batch sb
+        <include refid="latestItemStatisticsJoin"/>
+        ORDER BY sb.batch_id DESC
     </select>
 
     <select id="selectBatchById" parameterType="Long" resultType="SettlementBatchDTO">
         SELECT
-            batch_id,
-            executed_at,
-            status,
-            run_id
+            <include refid="batchStatisticsColumns"/>
+        FROM settlement_batch sb
+        <include refid="latestItemStatisticsJoin"/>
+        WHERE sb.batch_id = #{batchId}
+    </select>
+
+    <select id="selectBatchByIdForUpdate" parameterType="Long" resultType="SettlementBatchDTO">
+        SELECT batch_id, executed_at, status, run_id, failure_message
         FROM settlement_batch
         WHERE batch_id = #{batchId}
+        FOR UPDATE
     </select>
 
     <insert id="insertBatch" parameterType="SettlementBatchDTO"
@@ -40,12 +73,10 @@
 
     <select id="selectBatchByRunId" parameterType="String" resultType="SettlementBatchDTO">
         SELECT
-            batch_id,
-            executed_at,
-            status,
-            run_id
-        FROM settlement_batch
-        WHERE run_id = #{runId}
+            <include refid="batchStatisticsColumns"/>
+        FROM settlement_batch sb
+        <include refid="latestItemStatisticsJoin"/>
+        WHERE sb.run_id = #{runId}
     </select>
 
     <select id="selectRunningBatchByBusinessDate" parameterType="java.time.LocalDate" resultType="SettlementBatchDTO">
@@ -61,6 +92,14 @@
         LIMIT 1
     </select>
 
+    <select id="selectBatchByBusinessDate" parameterType="java.time.LocalDate" resultType="SettlementBatchDTO">
+        SELECT batch_id, executed_at, status, run_id, failure_message
+        FROM settlement_batch
+        WHERE CAST(executed_at AS DATE) = CAST(#{businessDate} AS DATE)
+        ORDER BY batch_id
+        LIMIT 1
+    </select>
+
     <select id="countRunningBatch" parameterType="SettlementBatchDTO" resultType="int">
         SELECT COUNT(*)
         FROM settlement_batch
@@ -71,9 +110,51 @@
     <update id="updateBatchStatus" parameterType="SettlementBatchDTO">
         UPDATE settlement_batch
         SET status = #{status}
+            , failure_message = #{failureMessage}
         WHERE batch_id = #{batchId}
           AND status = 'RUNNING'
           AND #{status} IN ('COMPLETED', 'FAILED')
+    </update>
+
+    <update id="refreshBatchStatusAfterRetry" parameterType="Long">
+        UPDATE settlement_batch
+        SET status = CASE WHEN (
+                SELECT COUNT(*)
+                FROM settlement_item latest
+                WHERE latest.batch_id = #{batchId}
+                  AND latest.result = 'FAILED'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM settlement_item newer
+                      WHERE newer.batch_id = latest.batch_id
+                        AND newer.exchange_id = latest.exchange_id
+                        AND newer.item_id &gt; latest.item_id
+                  )
+            ) = 0 THEN 'COMPLETED' ELSE 'FAILED' END,
+            failure_message = CASE WHEN (
+                SELECT COUNT(*)
+                FROM settlement_item latest
+                WHERE latest.batch_id = #{batchId}
+                  AND latest.result = 'FAILED'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM settlement_item newer
+                      WHERE newer.batch_id = latest.batch_id
+                        AND newer.exchange_id = latest.exchange_id
+                        AND newer.item_id &gt; latest.item_id
+                  )
+            ) = 0 THEN NULL ELSE '정산 Item 재처리 실패 건 존재' END
+        WHERE batch_id = #{batchId}
+          AND status IN ('RUNNING', 'FAILED', 'COMPLETED')
+    </update>
+
+    <update id="markBatchRetryRunning" parameterType="SettlementBatchDTO">
+        UPDATE settlement_batch
+        SET status = 'RUNNING',
+            failure_message = NULL,
+            run_id = COALESCE(#{runId}, run_id)
+        WHERE batch_id = #{batchId}
+          AND status = 'FAILED'
     </update>
 
 </mapper>

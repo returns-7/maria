@@ -1,8 +1,6 @@
 package com.app.maria.domain.settlement.batch;
 
-import com.app.maria.domain.settlement.exception.SettlementStateConflictException;
-import com.app.maria.domain.settlement.mapper.SettlementBatchMapper;
-import com.app.maria.domain.settlement.type.BatchStatus;
+import com.app.maria.domain.settlement.component.SettlementBatchStatusUpdater;
 import lombok.RequiredArgsConstructor;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobExecutionListener;
@@ -14,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SettlementJobListener implements JobExecutionListener {
 
-  private final SettlementBatchMapper settlementBatchMapper;
+  private final SettlementBatchStatusUpdater statusUpdater;
 
   @Override
   @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -28,14 +26,7 @@ public class SettlementJobListener implements JobExecutionListener {
       return;
     }
 
-    settlementBatchMapper.selectBatchById(batchId).ifPresent(batch -> {
-      if (batch.getStatus() == BatchStatus.RUNNING) {
-        batch.setStatus(BatchStatus.FAILED);
-        int result = settlementBatchMapper.updateBatchStatus(batch);
-        if(result != 1){
-          throw new SettlementStateConflictException("Batch 실패 상태 변경 실패");
-        }
-      }
-    });
+    String message = jobExecution.getAllFailureExceptions().isEmpty()  ? "확정산 Job 실행 실패" : jobExecution.getAllFailureExceptions().get(0).getMessage();
+    statusUpdater.markFailedIfRunning(batchId, message);
   }
 }

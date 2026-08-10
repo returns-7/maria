@@ -2,7 +2,6 @@ package com.app.maria.domain.settlement.batch;
 
 import com.app.maria.domain.settlement.component.SettlementBatchStatusUpdater;
 import com.app.maria.domain.settlement.dto.SettlementBatchDTO;
-import com.app.maria.domain.settlement.exception.SettlementStateConflictException;
 import com.app.maria.domain.settlement.type.BatchStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,7 +13,6 @@ import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.launch.JobLauncher;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,10 +59,9 @@ class SettlementBatchLauncherTest {
         .status(BatchStatus.RUNNING)
         .build();
 
-    assertThatThrownBy(() -> launcher.launch(batch))
-        .isInstanceOf(SettlementStateConflictException.class);
+    launcher.launch(batch);
 
     assertThat(batch.getStatus()).isEqualTo(BatchStatus.RUNNING);
-    verify(statusUpdater).markFailed(1L);
+    verify(statusUpdater).markFailedIfRunning(1L, "launch failed");
   }
 }

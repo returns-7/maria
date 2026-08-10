@@ -9,13 +9,17 @@
         SELECT
             si.item_id,
             si.batch_id,
+            si.result,
+            si.processed_at,
+            si.failure_code,
+            si.failure_message,
             ke.exchange_id,
             ke.account_id,
             ke.order_id,
             ke.provisional_amount,
             ke.provisional_at,
             ke.settlement_status,
-            so.purchase_fx_rate,
+            so.settlement_fx_rate,
             so.status AS sell_order_status,
             ind.purchase_currency
         FROM settlement_item si
@@ -35,13 +39,17 @@
         SELECT
             si.item_id,
             si.batch_id,
+            si.result,
+            si.processed_at,
+            si.failure_code,
+            si.failure_message,
             ke.exchange_id,
             ke.account_id,
             ke.order_id,
             ke.provisional_amount,
             ke.provisional_at,
             ke.settlement_status,
-            so.purchase_fx_rate,
+            so.settlement_fx_rate,
             so.status AS sell_order_status,
             ind.purchase_currency
         FROM settlement_item si
@@ -59,13 +67,17 @@
         SELECT
             si.item_id,
             si.batch_id,
+            si.result,
+            si.processed_at,
+            si.failure_code,
+            si.failure_message,
             ke.exchange_id,
             ke.account_id,
             ke.order_id,
             ke.provisional_amount,
             ke.provisional_at,
             ke.settlement_status,
-            so.purchase_fx_rate,
+            so.settlement_fx_rate,
             so.status AS sell_order_status,
             ind.purchase_currency
         FROM settlement_item si
@@ -82,13 +94,17 @@
         SELECT
             si.item_id,
             si.batch_id,
+            si.result,
+            si.processed_at,
+            si.failure_code,
+            si.failure_message,
             ke.exchange_id,
             ke.account_id,
             ke.order_id,
             ke.provisional_amount,
             ke.provisional_at,
             ke.settlement_status,
-            so.purchase_fx_rate,
+            so.settlement_fx_rate,
             so.status AS sell_order_status,
             ind.purchase_currency
         FROM settlement_item si
@@ -99,7 +115,7 @@
         JOIN inbound_detail ind
             ON ind.inbound_detail_id = so.inbound_detail_id
         WHERE si.batch_id = #{batchId}
-            AND si.result LIKE 'FAILED';
+            AND si.result = 'FAILED';
     </select>
 
 </mapper>

@@ -17,4 +17,9 @@ public class SettlementBatchDTO {
   private LocalDateTime executedAt;
   private BatchStatus status;
   private String runId;
+  private String failureMessage;
+  private int totalCount;
+  private int successCount;
+  private int failedCount;
+  private int processedCount;
 }

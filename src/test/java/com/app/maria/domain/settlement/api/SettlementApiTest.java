@@ -57,6 +57,26 @@ class SettlementApiTest {
   }
 
   @Test
+  void executeSettlementBatchReturnsExistingCompletedBatch() throws Exception {
+    SettlementBatchDTO completedBatch = batch();
+    completedBatch.setStatus(BatchStatus.COMPLETED);
+    when(settlementService.executeSettlementBatch()).thenReturn(completedBatch);
+
+    mockMvc.perform(post("/api/settlement/jobs"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("COMPLETED"));
+  }
+
+  @Test
+  @WithMockUser(roles = "VIEWER")
+  void viewerCannotExecuteSettlementBatch() throws Exception {
+    mockMvc.perform(post("/api/settlement/jobs"))
+        .andExpect(status().isForbidden());
+
+    verify(settlementService, never()).executeSettlementBatch();
+  }
+
+  @Test
   void getSettlementBatchEndpointsReturnBatch() throws Exception {
     SettlementBatchDTO batch = batch();
     when(settlementService.getSettlementBatches()).thenReturn(List.of(batch));

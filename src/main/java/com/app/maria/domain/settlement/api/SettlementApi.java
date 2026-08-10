@@ -12,6 +12,7 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,15 +27,20 @@ import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/settlement")
+@PreAuthorize("hasAnyRole('ADMIN', 'SETTLEMENT', 'REVIEWER', 'VIEWER')")
 public class SettlementApi {
 
   private final SettlementService settlementService;
 
   @PostMapping("/jobs")
+  @PreAuthorize("hasAnyRole('ADMIN', 'SETTLEMENT')")
   //Batch 실행 요청
   public ResponseEntity<ApiResponseDTO<SettlementBatchDTO>> executeSettlementBatch() {
     SettlementBatchDTO batch = settlementService.executeSettlementBatch();
-    return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponseDTO.of("확정산 배치 실행 요청 완료", batch));
+    HttpStatus status = batch.getStatus() == com.app.maria.domain.settlement.type.BatchStatus.RUNNING
+        ? HttpStatus.ACCEPTED
+        : HttpStatus.OK;
+    return ResponseEntity.status(status).body(ApiResponseDTO.of("확정산 배치 실행 요청 완료", batch));
   }
 
   @GetMapping("/batches")
@@ -80,6 +86,19 @@ public class SettlementApi {
   //Item 조인 상세
   public ResponseEntity<ApiResponseDTO<SettlementJoinDTO>> getSettlementItem(@PathVariable @Positive Long batchId, @PathVariable @Positive Long itemId) {
     return ResponseEntity.ok(ApiResponseDTO.of("확정산 항목 상세 조회", settlementService.getSettlementItem(batchId, itemId)));
+  }
+
+  @PostMapping("/batches/{batchId}/items/{itemId}/retry")
+  @PreAuthorize("hasAnyRole('ADMIN', 'SETTLEMENT')")
+  public ResponseEntity<ApiResponseDTO<SettlementItemDTO>> retryFailedSettlementItem(@PathVariable @Positive Long batchId, @PathVariable @Positive Long itemId) {
+    return ResponseEntity.ok(ApiResponseDTO.of("실패한 확정산 항목 재처리 시도 완료", settlementService.retryFailedSettlementItem(batchId, itemId)));
+  }
+
+  @PostMapping("/batches/{batchId}/retry")
+  @PreAuthorize("hasAnyRole('ADMIN', 'SETTLEMENT')")
+  public ResponseEntity<ApiResponseDTO<SettlementBatchDTO>> retryFailedSettlementBatch(@PathVariable @Positive Long batchId) {
+    return ResponseEntity.status(HttpStatus.ACCEPTED)
+        .body(ApiResponseDTO.of("실패한 확정산 Batch 재처리 요청 완료", settlementService.retryFailedSettlementBatch(batchId)));
   }
 
   @GetMapping("/exchanges/{exchangeId}")
