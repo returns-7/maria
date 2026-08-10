@@ -66,17 +66,6 @@ public class MydataProviderImpl implements MydataProvider {
   }
 
   @Override
-  public boolean hasOwnRiaAccount(String ciHash) {
-    MydataRiaAccountsResponseDTO response = getRiaAccounts(ciHash);
-    if (response == null || response.getData() == null) {
-      throw new MydataApiException("myData 계좌 조회 응답이 올바르지 않습니다.", null);
-    }
-    return response.getData().stream()
-        .filter(account -> account != null)
-        .anyMatch(account -> ownBrokerName.equals(account.getBrokerName()));
-  }
-
-  @Override
   public HttpStatusCode createRiaAccount(String ciHash, AccountDTO account) {
     log.info("ciHash: {}", ciHash);
     Map<String, String> req = new HashMap<>();
@@ -98,12 +87,10 @@ public class MydataProviderImpl implements MydataProvider {
   @Override
   public HttpStatusCode updateRiaLimit(String ciHash, AccountDTO account) {
     log.info("ciHash: {}", ciHash);
-    MydataRiaAccountsResponseDTO.MyDataAccountResponse ownRiaAccount = getOwnRiaAccount(ciHash);
     Map<String, String> req = new HashMap<>();
     req.put("ciHash", ciHash);
     req.put("brokerName", ownBrokerName);
     req.put("riaLimit", String.valueOf(account.getLimitAmount()));
-    req.put("riaCumulativeSell", String.valueOf(ownRiaAccount.getRiaCumulativeSell()));
 
     try {
       ResponseEntity<?> response = restClient.put().uri(myDataUrl + UPDATE_RIA_LIMIT_PATH)
@@ -115,18 +102,4 @@ public class MydataProviderImpl implements MydataProvider {
     }
   }
 
-  private MydataRiaAccountsResponseDTO.MyDataAccountResponse getOwnRiaAccount(String ciHash) {
-    MydataRiaAccountsResponseDTO response = getRiaAccounts(ciHash);
-    if (response == null || response.getData() == null) {
-      throw new MydataApiException("myData 계좌 조회 응답이 올바르지 않습니다.", null);
-    }
-    MydataRiaAccountsResponseDTO.MyDataAccountResponse ownAccount = response.getData().stream()
-        .filter(account -> account != null && ownBrokerName.equals(account.getBrokerName()))
-        .findFirst()
-        .orElseThrow(() -> new MydataApiException("myData에 당사 RIA 계좌가 없습니다.", null));
-    if (ownAccount.getRiaCumulativeSell() == null || ownAccount.getRiaCumulativeSell().signum() < 0) {
-      throw new MydataApiException("myData 누적 매도금액 응답이 올바르지 않습니다.", null);
-    }
-    return ownAccount;
-  }
 }

@@ -9,7 +9,6 @@ import java.math.BigDecimal;
 public interface MydataProvider {
   BigDecimal getExternalConfiguredLimit(String ciHash);
   MydataRiaAccountsResponseDTO getRiaAccounts(String ciHash);
-  boolean hasOwnRiaAccount(String ciHash);
   HttpStatusCode createRiaAccount(String ciHash, AccountDTO account);
   HttpStatusCode updateRiaLimit(String ciHash, AccountDTO account);
 }

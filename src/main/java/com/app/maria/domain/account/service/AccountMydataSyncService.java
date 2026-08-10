@@ -44,6 +44,12 @@ public class AccountMydataSyncService {
   }
 
   private void retry(ClaimedTask task) {
+    SyncOperation operation = parseOperation(task);
+    if (operation == null) {
+      taskRepository.complete(task);
+      return;
+    }
+
     try {
       AccountDTO account = accountMapper.selectByAccountId(task.accountId()).orElse(null);
       if (account == null || account.getStatus() != Status.OPENED) {
@@ -52,11 +58,19 @@ public class AccountMydataSyncService {
       }
 
       String ciHash = accountMapper.selectCiHashByCustomerId(account.getCustomerId()).orElseThrow(() -> new AccountNotFoundException("개설할 계좌의 사용자를 찾을 수 없습니다."));
-      SyncOperation operation = mydataProvider.hasOwnRiaAccount(ciHash) ? SyncOperation.UPDATE_LIMIT : SyncOperation.CREATE;
       synchronize(account, ciHash, operation, task);
     } catch (RuntimeException exception) {
       log.error("MyData RIA 계좌 재동기화 실패: accountId={}", task.accountId(), exception);
-      taskRepository.reschedule(task, SyncOperation.UPDATE_LIMIT.name());
+      taskRepository.reschedule(task, operation.name());
+    }
+  }
+
+  private SyncOperation parseOperation(ClaimedTask task) {
+    try {
+      return SyncOperation.from(task.value());
+    } catch (IllegalArgumentException exception) {
+      log.error("유효하지 않은 MyData 동기화 작업을 제거합니다: accountId={}", task.accountId(), exception);
+      return null;
     }
   }
 
@@ -78,6 +92,14 @@ public class AccountMydataSyncService {
 
   private enum SyncOperation {
     CREATE,
-    UPDATE_LIMIT
+    UPDATE_LIMIT;
+
+    private static SyncOperation from(String taskValue) {
+      try {
+        return SyncOperation.valueOf(taskValue.split(":", 2)[0]);
+      } catch (RuntimeException exception) {
+        throw new IllegalArgumentException("유효하지 않은 MyData 동기화 작업입니다.", exception);
+      }
+    }
   }
 }
