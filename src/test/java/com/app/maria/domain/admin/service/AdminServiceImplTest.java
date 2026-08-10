@@ -7,12 +7,15 @@ import com.app.maria.domain.admin.exception.AdminException;
 import com.app.maria.domain.admin.exception.AdminNotFoundException;
 import com.app.maria.domain.admin.mapper.AdminMapper;
 import com.app.maria.domain.admin.type.AdminRole;
+import com.app.maria.global.audit.dto.AuditLogDTO;
+import com.app.maria.global.audit.service.AuditLogService;
 import com.app.maria.global.jwt.JwtTokenProvider;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -38,6 +41,9 @@ class AdminServiceImplTest {
 
     @Mock
     Claims claims;
+
+    @Mock
+    AuditLogService auditLogService;
 
     @InjectMocks
     AdminServiceImpl adminService;
@@ -128,25 +134,35 @@ class AdminServiceImplTest {
     }
 
     @Test
-    @DisplayName("대상 관리자가 존재하면 역할을 변경한다")
+    @DisplayName("대상 관리자가 존재하면 역할을 변경하고 감사로그를 남긴다")
     void updateRoleUpdatesRoleWhenAdminExists() {
         when(adminMapper.selectAdminByAdminId(1L)).thenReturn(Optional.of(admin()));
 
-        adminService.updateRole(1L, AdminRole.ADMIN);
+        adminService.updateRole(99L, 1L, AdminRole.ADMIN);
 
         verify(adminMapper).updateRole(1L, AdminRole.ADMIN);
+
+        ArgumentCaptor<AuditLogDTO> captor = ArgumentCaptor.forClass(AuditLogDTO.class);
+        verify(auditLogService).log(captor.capture());
+        AuditLogDTO auditLog = captor.getValue();
+        assertThat(auditLog.getAdminId()).isEqualTo(99L);
+        assertThat(auditLog.getTargetTable()).isEqualTo("ADMIN_USER");
+        assertThat(auditLog.getTargetPk()).isEqualTo("1");
+        assertThat(auditLog.getBeforeValue()).isEqualTo("REVIEWER");
+        assertThat(auditLog.getAfterValue()).isEqualTo("ADMIN");
     }
 
     @Test
-    @DisplayName("대상 관리자가 없으면 예외를 던지고 역할을 변경하지 않는다")
+    @DisplayName("대상 관리자가 없으면 예외를 던지고 역할 변경도 감사로그 저장도 하지 않는다")
     void updateRoleThrowsAdminNotFoundExceptionWhenAdminDoesNotExist() {
         when(adminMapper.selectAdminByAdminId(1L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> adminService.updateRole(1L, AdminRole.ADMIN))
+        assertThatThrownBy(() -> adminService.updateRole(99L, 1L, AdminRole.ADMIN))
                 .isInstanceOf(AdminNotFoundException.class)
                 .hasMessage("대상 관리자가 없습니다.");
 
         verify(adminMapper, never()).updateRole(anyLong(), any());
+        verifyNoInteractions(auditLogService);
     }
 
     @Test

@@ -6,7 +6,7 @@ import com.app.maria.domain.admin.type.AdminRole;
 import java.util.List;
 public interface AdminService {
     AdminLoginResponseDTO login(AdminLoginRequestDTO request);
-    void updateRole(Long adminId, AdminRole newRole);
+    void updateRole(Long actorAdminId, Long targetAdminId, AdminRole newRole);
     AdminLoginResponseDTO refresh(String refreshToken);
     List<AdminSummaryResponseDTO> getAllAdmins();
 }

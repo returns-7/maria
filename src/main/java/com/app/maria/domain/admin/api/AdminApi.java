@@ -10,13 +10,16 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/auth/admin")
 public class AdminApi {
+
     private final AdminService adminService;
+
     @PostMapping("/login")
     public ResponseEntity<ApiResponseDTO<AdminLoginResponseDTO>> login(@Valid @RequestBody AdminLoginRequestDTO request) {
         AdminLoginResponseDTO response = adminService.login(request);
@@ -29,8 +32,8 @@ public class AdminApi {
     }
     @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{adminId}/role")
-    public ResponseEntity<ApiResponseDTO<Void>> updateRole(@PathVariable Long adminId, @Valid @RequestBody AdminRoleUpdateRequestDTO request) {
-        adminService.updateRole(adminId, request.getRole());
+    public ResponseEntity<ApiResponseDTO<Void>> updateRole(@AuthenticationPrincipal Long actorAdminId, @PathVariable Long adminId, @Valid @RequestBody AdminRoleUpdateRequestDTO request) {
+        adminService.updateRole(actorAdminId, adminId, request.getRole());
         return ResponseEntity.ok(ApiResponseDTO.of("역할이 변경되었습니다."));
     }
     @PreAuthorize("hasRole('ADMIN')")

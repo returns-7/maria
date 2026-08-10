@@ -14,6 +14,8 @@ import java.math.BigDecimal;
 @Transactional(rollbackFor = Exception.class)
 public class SellLimitServiceImpl implements SellLimitService {
 
+    private static final BigDecimal MAX_TOTAL_SELL_LIMIT = BigDecimal.valueOf(50_000_000);
+
     private final SellLimitMapper sellLimitMapper;
     private final MydataClient mydataClient;
 
@@ -31,9 +33,13 @@ public class SellLimitServiceImpl implements SellLimitService {
 
         BigDecimal externalSum = mydataClient.getExternalSellTotal(ciHash);
 
-        BigDecimal totalAfterThisOrder = finalizedSum.add(pendingSum).add(externalSum).add(orderAmount);
+        BigDecimal localTotal = finalizedSum.add(pendingSum).add(orderAmount);
+        BigDecimal globalTotal = localTotal.add(externalSum);
 
-        return totalAfterThisOrder.compareTo(limitAmount) <= 0;
+        boolean withinAccountLimit = localTotal.compareTo(limitAmount) <= 0;
+        boolean withinGlobalCap = globalTotal.compareTo(MAX_TOTAL_SELL_LIMIT) <= 0;
+
+        return withinAccountLimit && withinGlobalCap;
     }
 
 }

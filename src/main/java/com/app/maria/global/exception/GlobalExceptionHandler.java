@@ -18,7 +18,9 @@ import com.app.maria.domain.sellorder.exception.SellOrderException;
 import com.app.maria.domain.sellorder.exception.SellOrderNotFoundException;
 import com.app.maria.domain.settlement.exception.*;
 import com.app.maria.domain.withdrawal.exception.WithdrawalException;
+import com.app.maria.global.audit.exception.AuditLogException;
 import com.app.maria.global.audit.exception.AuditLogInsertException;
+import com.app.maria.global.audit.exception.AuditLogNotFoundException;
 import com.app.maria.global.clock.exception.SystemClockNotInitializedException;
 import com.app.maria.global.clock.exception.SystemClockUpdateException;
 import com.app.maria.global.response.ApiResponseDTO;
@@ -100,6 +102,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponseDTO<Void>> handleKisPriceNotFoundException(KisPriceNotFoundException e) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(ApiResponseDTO.of(e.getMessage()));
     }
+
     @ExceptionHandler(UnsupportedExchangeException.class)
     public ResponseEntity<ApiResponseDTO<Void>> handleUnsupportedExchangeException(UnsupportedExchangeException e) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(ApiResponseDTO.of(e.getMessage()));
@@ -217,13 +220,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponseDTO.of(e.getMessage()));
     }
 
-    //10.Withdrawal 예외
+    // 10. Withdrawal 예외
     @ExceptionHandler(WithdrawalException.class)
     public ResponseEntity<ApiResponseDTO<Void>> handleWithdrawalException(WithdrawalException e){
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponseDTO.of(e.getMessage()));
     }
 
-    //11. Clock 예외
+    // 11. Clock 예외
     @ExceptionHandler(SystemClockNotInitializedException.class)
     public ResponseEntity<ApiResponseDTO<Void>> handleSystemClockNotInitializedException(SystemClockNotInitializedException e){
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponseDTO.of(e.getMessage()));
@@ -234,13 +237,23 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponseDTO.of(e.getMessage()));
     }
 
-    //12. Audit 예외
+    // 12. Audit 예외
+    @ExceptionHandler(AuditLogException.class)
+    public ResponseEntity<ApiResponseDTO<Void>> handleAuditLogException(AuditLogException e){
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponseDTO.of(e.getMessage()));
+    }
+
     @ExceptionHandler(AuditLogInsertException.class)
     public ResponseEntity<ApiResponseDTO<Void>> handleAuditLogInsertException(AuditLogInsertException e){
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponseDTO.of(e.getMessage()));
     }
 
-    //13. DomesticProduct 예외
+    @ExceptionHandler(AuditLogNotFoundException.class)
+    public ResponseEntity<ApiResponseDTO<Void>> handleAuditLogNotFoundException(AuditLogNotFoundException e){
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponseDTO.of(e.getMessage()));
+    }
+
+    // 13. DomesticProduct 예외
     @ExceptionHandler(DomesticProductException.class)
     public ResponseEntity<ApiResponseDTO<Void>> handleDomesticProductException(DomesticProductException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponseDTO.of(e.getMessage()));
@@ -251,9 +264,9 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponseDTO.of(e.getMessage()));
     }
 
-    //14. 가환전 처리 예외
+    // 14. 가환전 처리 예외
     @ExceptionHandler(ProvisionalException.class)
     public ResponseEntity<ApiResponseDTO<Void>> handleProvisionalException(ProvisionalException e){
-      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponseDTO.of(e.getMessage()));
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponseDTO.of(e.getMessage()));
     }
 }

@@ -10,15 +10,14 @@ import java.time.LocalDateTime;
 @Setter
 @ToString
 @Builder
-public class AuditLogDTO {
+public class AuditLogSearchDTO {
 
-    private Long auditId;
     private Long adminId;
     private String targetTable;
     private String targetPk;
-    private String beforeValue;
-    private String afterValue;
     private String reasonCode;
-    private LocalDateTime processedAt;
+
+    private LocalDateTime startDate;
+    private LocalDateTime endDate;
 
 }

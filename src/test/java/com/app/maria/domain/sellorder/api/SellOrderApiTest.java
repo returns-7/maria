@@ -68,7 +68,7 @@ class SellOrderApiTest {
                 .status(SellOrderStatus.EXECUTED)
                 .build();
 
-        when(sellOrderService.placeSellOrder(any())).thenReturn(List.of(response));
+        when(sellOrderService.placeSellOrder(any(), any())).thenReturn(List.of(response));
 
         mockMvc.perform(post("/api/sell-orders")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -102,7 +102,7 @@ class SellOrderApiTest {
                 .status(SellOrderStatus.EXECUTED)
                 .build();
 
-        when(sellOrderService.placeSellOrder(any())).thenReturn(List.of(firstLot, secondLot));
+        when(sellOrderService.placeSellOrder(any(), any())).thenReturn(List.of(firstLot, secondLot));
 
         mockMvc.perform(post("/api/sell-orders")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -129,7 +129,7 @@ class SellOrderApiTest {
                 .status(SellOrderStatus.REJECTED)
                 .build();
 
-        when(sellOrderService.placeSellOrder(any())).thenReturn(List.of(response));
+        when(sellOrderService.placeSellOrder(any(), any())).thenReturn(List.of(response));
 
         mockMvc.perform(post("/api/sell-orders")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -148,7 +148,7 @@ class SellOrderApiTest {
     void placeSellOrderReturns400WhenServiceThrowsException() throws Exception {
         SellOrderRequestDTO request = validRequestBuilder().build();
 
-        when(sellOrderService.placeSellOrder(any()))
+        when(sellOrderService.placeSellOrder(any(), any()))
                 .thenThrow(new SellOrderException("한도를 초과했습니다."));
 
         mockMvc.perform(post("/api/sell-orders")
@@ -164,7 +164,7 @@ class SellOrderApiTest {
     void placeSellOrderReturns502WhenExchangeUnsupported() throws Exception {
         SellOrderRequestDTO request = validRequestBuilder().build();
 
-        when(sellOrderService.placeSellOrder(any()))
+        when(sellOrderService.placeSellOrder(any(), any()))
                 .thenThrow(new UnsupportedExchangeException("지원하지 않는 거래소입니다."));
 
         mockMvc.perform(post("/api/sell-orders")
@@ -186,7 +186,7 @@ class SellOrderApiTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("매도 수량은 0보다 커야 합니다."));
 
-        verify(sellOrderService, never()).placeSellOrder(any());
+        verify(sellOrderService, never()).placeSellOrder(any(), any());
     }
 
     @Test
@@ -201,7 +201,7 @@ class SellOrderApiTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("매도 수량을 입력하세요."));
 
-        verify(sellOrderService, never()).placeSellOrder(any());
+        verify(sellOrderService, never()).placeSellOrder(any(), any());
     }
 
     @Test
@@ -216,7 +216,7 @@ class SellOrderApiTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("매도 수량은 0보다 커야 합니다."));
 
-        verify(sellOrderService, never()).placeSellOrder(any());
+        verify(sellOrderService, never()).placeSellOrder(any(), any());
     }
 
     @Test
@@ -231,7 +231,7 @@ class SellOrderApiTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("계좌 ID를 입력하세요."));
 
-        verify(sellOrderService, never()).placeSellOrder(any());
+        verify(sellOrderService, never()).placeSellOrder(any(), any());
     }
 
     @Test
@@ -246,7 +246,7 @@ class SellOrderApiTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("종목 ID를 입력하세요."));
 
-        verify(sellOrderService, never()).placeSellOrder(any());
+        verify(sellOrderService, never()).placeSellOrder(any(), any());
     }
 
     @Test
@@ -259,7 +259,7 @@ class SellOrderApiTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized());
 
-        verify(sellOrderService, never()).placeSellOrder(any());
+        verify(sellOrderService, never()).placeSellOrder(any(), any());
     }
 
     @Test
@@ -273,7 +273,7 @@ class SellOrderApiTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isForbidden());
 
-        verify(sellOrderService, never()).placeSellOrder(any());
+        verify(sellOrderService, never()).placeSellOrder(any(), any());
     }
 
     @Test

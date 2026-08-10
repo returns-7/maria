@@ -133,7 +133,7 @@ class AdminApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("역할이 변경되었습니다."));
 
-        verify(adminService).updateRole(1L, AdminRole.REVIEWER);
+        verify(adminService).updateRole(any(), eq(1L), eq(AdminRole.REVIEWER));
     }
 
     @Test
@@ -146,7 +146,7 @@ class AdminApiTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized());
 
-        verify(adminService, never()).updateRole(anyLong(), any());
+        verify(adminService, never()).updateRole(any(), anyLong(), any());
     }
 
     @Test
@@ -160,7 +160,7 @@ class AdminApiTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isForbidden());
 
-        verify(adminService, never()).updateRole(anyLong(), any());
+        verify(adminService, never()).updateRole(any(), anyLong(), any());
     }
 
     @Test
@@ -174,7 +174,7 @@ class AdminApiTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
 
-        verify(adminService, never()).updateRole(anyLong(), any());
+        verify(adminService, never()).updateRole(any(), anyLong(), any());
     }
 
     @Test
@@ -184,7 +184,7 @@ class AdminApiTest {
         AdminRoleUpdateRequestDTO request = roleUpdateRequest(AdminRole.REVIEWER);
 
         doThrow(new AdminNotFoundException("대상 관리자가 없습니다."))
-                .when(adminService).updateRole(1L, AdminRole.REVIEWER);
+                .when(adminService).updateRole(any(), eq(1L), eq(AdminRole.REVIEWER));
 
         mockMvc.perform(patch("/api/auth/admin/{adminId}/role", 1L)
                         .contentType(MediaType.APPLICATION_JSON)

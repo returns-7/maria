@@ -68,13 +68,32 @@ class SellLimitServiceImplTest {
     }
 
     @Test
-    @DisplayName("RIA 확정산 + 미확정 매도주문 + myData 외부 순매수를 각각 따로 더한 뒤 이번 주문금액까지 정확히 합산한다")
-    void isWithinSellLimitSumsFinalizedAndPendingAndExternalAndOrderAmountCorrectly() {
-        stubAccount(100L, "6000", "2000", "1500", "ci-hash-1");
-        when(mydataClient.getExternalSellTotal("ci-hash-1")).thenReturn(new BigDecimal("1500"));
+    @DisplayName("계좌 로컬 한도 판정은 확정산+미확정+이번 주문금액만 정확히 합산하고, 외부 순매수는 포함하지 않는다")
+    void isWithinSellLimitComparesOnlyLocalSumAgainstAccountLimit() {
+        stubAccount(100L, "3500", "2000", "1500", "ci-hash-1");
+        when(mydataClient.getExternalSellTotal("ci-hash-1")).thenReturn(new BigDecimal("40000000"));
 
-        assertThat(sellLimitService.isWithinSellLimit(100L, new BigDecimal("1000"))).isTrue();
-        assertThat(sellLimitService.isWithinSellLimit(100L, new BigDecimal("1001"))).isFalse();
+        assertThat(sellLimitService.isWithinSellLimit(100L, BigDecimal.ZERO)).isTrue();
+        assertThat(sellLimitService.isWithinSellLimit(100L, new BigDecimal("1"))).isFalse();
+    }
+
+    @Test
+    @DisplayName("계좌 로컬 한도 이내여도 확정산+미확정+외부순매수+이번 주문금액 합이 5천만원 하드캡을 넘으면 거부한다")
+    void isWithinSellLimitReturnsFalseWhenGlobalCapExceededEvenWithinAccountLimit() {
+        stubAccount(100L, "50000000", "0", "0", "ci-hash-1");
+        when(mydataClient.getExternalSellTotal("ci-hash-1")).thenReturn(new BigDecimal("40000000"));
+
+        assertThat(sellLimitService.isWithinSellLimit(100L, new BigDecimal("10000000"))).isTrue();
+        assertThat(sellLimitService.isWithinSellLimit(100L, new BigDecimal("10000001"))).isFalse();
+    }
+
+    @Test
+    @DisplayName("다른 증권사에서 이미 판 금액이 있어도, 이 계좌 로컬 한도와 5천만원 하드캡을 둘 다 넘지 않으면 승인한다 (버그 이슈 재현 시나리오)")
+    void isWithinSellLimitApprovesWhenBothLocalAndGlobalLimitsAreRespectedDespiteExternalUsage() {
+        stubAccount(100L, "30000000", "0", "0", "ci-hash-1");
+        when(mydataClient.getExternalSellTotal("ci-hash-1")).thenReturn(new BigDecimal("15000000"));
+
+        assertThat(sellLimitService.isWithinSellLimit(100L, new BigDecimal("25000000"))).isTrue();
     }
 
     @Test
