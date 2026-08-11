@@ -1,6 +1,7 @@
 package com.app.maria.domain.settlement.provider;
 
 import com.app.maria.domain.settlement.exception.InvalidSettlementException;
+import com.app.maria.domain.settlement.exception.ExchangeRateExternalApiException;
 import com.app.maria.global.client.exchange.ExchangeRateClient;
 import com.app.maria.global.exception.ExchangeRateNotFoundException;
 import org.junit.jupiter.api.DisplayName;
@@ -90,7 +91,7 @@ class ExchangeRateProviderImplTest {
     when(exchangeRateClient.getBaseRate("USD", SEARCH_DATE)).thenReturn(null);
 
     assertThatThrownBy(() -> exchangeRateProvider.getFinalRate("USD", SEARCH_DATE))
-        .isInstanceOf(ExchangeRateNotFoundException.class)
+        .isInstanceOf(ExchangeRateExternalApiException.class)
         .hasMessage("유효하지 않은 환율 응답");
   }
 
@@ -102,7 +103,7 @@ class ExchangeRateProviderImplTest {
         .thenReturn(new BigDecimal(rate));
 
     assertThatThrownBy(() -> exchangeRateProvider.getFinalRate("USD", SEARCH_DATE))
-        .isInstanceOf(ExchangeRateNotFoundException.class)
+        .isInstanceOf(ExchangeRateExternalApiException.class)
         .hasMessage("유효하지 않은 환율 응답");
   }
 
@@ -127,7 +128,7 @@ class ExchangeRateProviderImplTest {
         .thenThrow(timeoutException);
 
     assertThatThrownBy(() -> exchangeRateProvider.getFinalRate("USD", SEARCH_DATE))
-        .isInstanceOf(ExchangeRateNotFoundException.class)
+        .isInstanceOf(ExchangeRateExternalApiException.class)
         .hasMessage("환율 API 연결 또는 응답 시간 초과")
         .hasCause(timeoutException);
 
@@ -185,7 +186,7 @@ class ExchangeRateProviderImplTest {
         .thenThrow(clientException);
 
     assertThatThrownBy(() -> exchangeRateProvider.getFinalRate("USD", SEARCH_DATE))
-        .isInstanceOf(ExchangeRateNotFoundException.class)
+        .isInstanceOf(ExchangeRateExternalApiException.class)
         .hasMessage("환율 API 호출 실패");
 
     verify(exchangeRateClient).getBaseRate("USD", SEARCH_DATE);
@@ -202,7 +203,7 @@ class ExchangeRateProviderImplTest {
     Thread.currentThread().interrupt();
     try {
       assertThatThrownBy(() -> exchangeRateProvider.getFinalRate("USD", SEARCH_DATE))
-          .isInstanceOf(ExchangeRateNotFoundException.class)
+          .isInstanceOf(ExchangeRateExternalApiException.class)
           .hasMessage("환율 API 재시도 대기 중단");
     } finally {
       Thread.interrupted();
@@ -218,7 +219,7 @@ class ExchangeRateProviderImplTest {
         .thenThrow(clientException);
 
     assertThatThrownBy(() -> exchangeRateProvider.getFinalRate("USD", SEARCH_DATE))
-        .isInstanceOf(ExchangeRateNotFoundException.class)
+        .isInstanceOf(ExchangeRateExternalApiException.class)
         .hasMessage("환율 API 호출 실패")
         .hasCause(clientException);
   }

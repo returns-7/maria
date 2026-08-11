@@ -23,11 +23,11 @@ public class AccountMydataSyncService {
   private final RedisMydataSyncTaskRepository taskRepository;
 
   public void create(AccountDTO account) {
-    taskRepository.enqueue(account.getAccountId(), SyncOperation.CREATE.name());
+    taskRepository.enqueue(account.getAccountId(), SyncOperation.SYNC.name());
   }
 
   public void updateLimit(AccountDTO account) {
-    taskRepository.enqueue(account.getAccountId(), SyncOperation.UPDATE_LIMIT.name());
+    taskRepository.enqueue(account.getAccountId(), SyncOperation.SYNC.name());
   }
 
   @Scheduled(fixedDelayString = "${custom.mydata.ria-sync-delay-ms:1000}")
@@ -58,7 +58,7 @@ public class AccountMydataSyncService {
       }
 
       String ciHash = accountMapper.selectCiHashByCustomerId(account.getCustomerId()).orElseThrow(() -> new AccountNotFoundException("개설할 계좌의 사용자를 찾을 수 없습니다."));
-      synchronize(account, ciHash, operation, task);
+      synchronize(account, ciHash, task);
     } catch (RuntimeException exception) {
       log.error("MyData RIA 계좌 재동기화 실패: accountId={}", task.accountId(), exception);
       taskRepository.reschedule(task, operation.name());
@@ -74,29 +74,30 @@ public class AccountMydataSyncService {
     }
   }
 
-  private void synchronize(AccountDTO account, String ciHash, SyncOperation operation, ClaimedTask task) {
+  private void synchronize(AccountDTO account, String ciHash, ClaimedTask task) {
     try {
-      boolean successful = (operation == SyncOperation.CREATE ? mydataProvider.createRiaAccount(ciHash, account) : mydataProvider.updateRiaLimit(ciHash, account))
-          .is2xxSuccessful();
+      boolean successful = mydataProvider.syncRiaAccount(ciHash, account).is2xxSuccessful();
       if (successful) {
         taskRepository.complete(task);
         return;
       }
-      taskRepository.reschedule(task, operation.name());
-      log.error("MyData RIA 계좌 동기화 실패: accountId={}, operation={}", account.getAccountId(), operation);
+      taskRepository.reschedule(task, SyncOperation.SYNC.name());
+      log.error("MyData RIA 계좌 동기화 실패: accountId={}", account.getAccountId());
     } catch (RuntimeException exception) {
-      log.error("MyData RIA 계좌 동기화 예외: accountId={}, operation={}", account.getAccountId(), operation, exception);
-      taskRepository.reschedule(task, operation.name());
+      log.error("MyData RIA 계좌 동기화 예외: accountId={}", account.getAccountId(), exception);
+      taskRepository.reschedule(task, SyncOperation.SYNC.name());
     }
   }
 
   private enum SyncOperation {
-    CREATE,
-    UPDATE_LIMIT;
+    SYNC;
 
     private static SyncOperation from(String taskValue) {
       try {
-        return SyncOperation.valueOf(taskValue.split(":", 2)[0]);
+        return switch (taskValue.split(":", 2)[0]) {
+          case "SYNC", "CREATE", "UPDATE_LIMIT" -> SYNC;
+          default -> throw new IllegalArgumentException("유효하지 않은 MyData 동기화 작업입니다.");
+        };
       } catch (RuntimeException exception) {
         throw new IllegalArgumentException("유효하지 않은 MyData 동기화 작업입니다.", exception);
       }

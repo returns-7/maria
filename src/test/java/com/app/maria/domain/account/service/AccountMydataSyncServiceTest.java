@@ -18,7 +18,6 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -34,82 +33,75 @@ class AccountMydataSyncServiceTest {
   @InjectMocks private AccountMydataSyncService service;
 
   @Test
-  void createEnqueuesInitialSynchronizationWithoutCallingMydata() {
-    AccountDTO account = openedAccount();
+  void createEnqueuesSyncWithoutCallingMydata() {
+    AccountDTO account = openedAccount(10L, "30000000");
 
     service.create(account);
 
-    verify(taskRepository).enqueue(10L, "CREATE");
-    verify(mydataProvider, never()).createRiaAccount(CI_HASH, account);
+    verify(taskRepository).enqueue(10L, "SYNC");
+    verify(mydataProvider, never()).syncRiaAccount(CI_HASH, account);
   }
 
   @Test
-  void updateLimitEnqueuesSynchronizationWithoutCallingMydata() {
-    AccountDTO account = openedAccount();
+  void updateLimitEnqueuesSyncWithoutCallingMydata() {
+    AccountDTO account = openedAccount(10L, "40000000");
 
     service.updateLimit(account);
 
-    verify(taskRepository).enqueue(10L, "UPDATE_LIMIT");
-    verify(mydataProvider, never()).updateRiaLimit(CI_HASH, account);
+    verify(taskRepository).enqueue(10L, "SYNC");
+    verify(mydataProvider, never()).syncRiaAccount(CI_HASH, account);
   }
 
   @Test
-  void retryUsesStoredOperationWithoutMydataLookup() {
-    AccountDTO missing = openedAccount();
-    missing.setAccountId(10L);
-    AccountDTO existing = openedAccount();
-    existing.setAccountId(11L);
-    ClaimedTask createTask = claimed(10L, "CREATE:0:token-10");
-    ClaimedTask updateTask = claimed(11L, "UPDATE_LIMIT:0:token-11");
-    when(taskRepository.claimDueTasks(100)).thenReturn(List.of(createTask, updateTask));
-    when(accountMapper.selectByAccountId(10L)).thenReturn(Optional.of(missing));
-    when(accountMapper.selectByAccountId(11L)).thenReturn(Optional.of(existing));
-    when(accountMapper.selectCiHashByCustomerId(CUSTOMER_ID)).thenReturn(Optional.of(CI_HASH));
-    when(mydataProvider.createRiaAccount(CI_HASH, missing)).thenReturn(HttpStatus.OK);
-    when(mydataProvider.updateRiaLimit(CI_HASH, existing)).thenReturn(HttpStatus.OK);
-
-    service.retryOpenedAccounts();
-
-    verify(mydataProvider).createRiaAccount(CI_HASH, missing);
-    verify(mydataProvider).updateRiaLimit(CI_HASH, existing);
-    verify(taskRepository).complete(createTask);
-    verify(taskRepository).complete(updateTask);
-    verify(taskRepository).release(createTask);
-    verify(taskRepository).release(updateTask);
-  }
-
-  @Test
-  void retryReschedulesUpdateWhenMydataUpdateFails() {
-    AccountDTO account = openedAccount();
-    account.setAccountId(10L);
-    ClaimedTask task = claimed(10L, "UPDATE_LIMIT:0:token-10");
+  void retrySyncsLatestAccountStateWithMydataSave() {
+    AccountDTO account = openedAccount(10L, "40000000");
+    ClaimedTask task = claimed(10L, "SYNC:0:token-10");
     when(taskRepository.claimDueTasks(100)).thenReturn(List.of(task));
     when(accountMapper.selectByAccountId(10L)).thenReturn(Optional.of(account));
     when(accountMapper.selectCiHashByCustomerId(CUSTOMER_ID)).thenReturn(Optional.of(CI_HASH));
-    when(mydataProvider.updateRiaLimit(CI_HASH, account))
-        .thenThrow(new MydataApiException("등록되지 않은 RIA 계좌", null));
+    when(mydataProvider.syncRiaAccount(CI_HASH, account)).thenReturn(HttpStatus.OK);
 
     service.retryOpenedAccounts();
 
-    verify(mydataProvider, never()).createRiaAccount(CI_HASH, account);
-    verify(mydataProvider).updateRiaLimit(CI_HASH, account);
-    verify(taskRepository).reschedule(task, "UPDATE_LIMIT");
+    verify(mydataProvider).syncRiaAccount(CI_HASH, account);
+    verify(taskRepository).complete(task);
     verify(taskRepository).release(task);
   }
 
   @Test
-  void retryPreservesCreateOperationWhenLookupFails() {
-    AccountDTO account = openedAccount();
-    ClaimedTask task = claimed(10L, "CREATE:0:token-10");
-    when(taskRepository.claimDueTasks(100)).thenReturn(List.of(task));
-    when(accountMapper.selectByAccountId(10L)).thenReturn(Optional.of(account));
-    when(accountMapper.selectCiHashByCustomerId(CUSTOMER_ID)).thenReturn(Optional.empty());
+  void retryTreatsLegacyCreateAndUpdateTasksAsSync() {
+    AccountDTO createAccount = openedAccount(10L, "30000000");
+    AccountDTO updateAccount = openedAccount(11L, "40000000");
+    ClaimedTask createTask = claimed(10L, "CREATE:0:token-10");
+    ClaimedTask updateTask = claimed(11L, "UPDATE_LIMIT:0:token-11");
+    when(taskRepository.claimDueTasks(100)).thenReturn(List.of(createTask, updateTask));
+    when(accountMapper.selectByAccountId(10L)).thenReturn(Optional.of(createAccount));
+    when(accountMapper.selectByAccountId(11L)).thenReturn(Optional.of(updateAccount));
+    when(accountMapper.selectCiHashByCustomerId(CUSTOMER_ID)).thenReturn(Optional.of(CI_HASH));
+    when(mydataProvider.syncRiaAccount(CI_HASH, createAccount)).thenReturn(HttpStatus.OK);
+    when(mydataProvider.syncRiaAccount(CI_HASH, updateAccount)).thenReturn(HttpStatus.OK);
 
     service.retryOpenedAccounts();
 
-    verify(mydataProvider, never()).createRiaAccount(CI_HASH, account);
-    verify(mydataProvider, never()).updateRiaLimit(CI_HASH, account);
-    verify(taskRepository).reschedule(task, "CREATE");
+    verify(mydataProvider).syncRiaAccount(CI_HASH, createAccount);
+    verify(mydataProvider).syncRiaAccount(CI_HASH, updateAccount);
+    verify(taskRepository).complete(createTask);
+    verify(taskRepository).complete(updateTask);
+  }
+
+  @Test
+  void retryReschedulesAsSyncWhenMydataSaveFails() {
+    AccountDTO account = openedAccount(10L, "40000000");
+    ClaimedTask task = claimed(10L, "SYNC:0:token-10");
+    when(taskRepository.claimDueTasks(100)).thenReturn(List.of(task));
+    when(accountMapper.selectByAccountId(10L)).thenReturn(Optional.of(account));
+    when(accountMapper.selectCiHashByCustomerId(CUSTOMER_ID)).thenReturn(Optional.of(CI_HASH));
+    when(mydataProvider.syncRiaAccount(CI_HASH, account))
+        .thenThrow(new MydataApiException("동기화 실패", null));
+
+    service.retryOpenedAccounts();
+
+    verify(taskRepository).reschedule(task, "SYNC");
     verify(taskRepository).release(task);
   }
 
@@ -117,12 +109,12 @@ class AccountMydataSyncServiceTest {
     return new ClaimedTask(accountId, value, "lock:" + accountId, "token:" + accountId);
   }
 
-  private AccountDTO openedAccount() {
+  private AccountDTO openedAccount(Long accountId, String limitAmount) {
     return AccountDTO.builder()
-        .accountId(10L)
+        .accountId(accountId)
         .customerId(CUSTOMER_ID)
         .status(Status.OPENED)
-        .limitAmount(BigDecimal.valueOf(30_000_000L))
+        .limitAmount(new BigDecimal(limitAmount))
         .build();
   }
 }
