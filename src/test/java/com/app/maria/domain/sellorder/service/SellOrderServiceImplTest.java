@@ -121,6 +121,8 @@ class SellOrderServiceImplTest {
         assertThat(first.getProcessedAt()).isEqualTo(NOW);
 
         verify(inboundMapper, times(1)).decreaseCurrentQty(1L, new BigDecimal("10"));
+        verify(provisionalExchangeService, times(1))
+                .createProvisionalExchange(any(SellOrderDTO.class));
 
         ArgumentCaptor<SellOrderDTO> captor = ArgumentCaptor.forClass(SellOrderDTO.class);
         verify(sellOrderMapper, times(1)).insertSellOrder(captor.capture());
@@ -169,6 +171,8 @@ class SellOrderServiceImplTest {
         verify(inboundMapper, times(1)).decreaseCurrentQty(1L, new BigDecimal("6"));
         verify(inboundMapper, times(1)).decreaseCurrentQty(2L, new BigDecimal("4"));
         verify(sellOrderMapper, times(2)).insertSellOrder(any());
+        verify(provisionalExchangeService, times(2))
+                .createProvisionalExchange(any(SellOrderDTO.class));
         verify(auditLogService, times(2)).log(any());
     }
 

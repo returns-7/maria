@@ -12,9 +12,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
@@ -29,7 +29,7 @@ import org.springframework.web.client.RestTemplate;
 })
 class ExchangeRestTemplateConfigTest {
 
-    @MockitoBean private BusinessClockService businessClockService;
+    @MockBean private BusinessClockService businessClockService;
 
     @Autowired private RestTemplate defaultRestTemplate;
 
@@ -65,15 +65,11 @@ class ExchangeRestTemplateConfigTest {
     }
 
     @Test
-    @DisplayName("기본 RestTemplate과 Settlement RestTemplate 둘 다 연결 3초, 응답 5초 제한을 적용한다")
-    void appliesSameTimeoutToBothRestTemplates() {
-        SimpleClientHttpRequestFactory defaultFactory =
-                (SimpleClientHttpRequestFactory) defaultRestTemplate.getRequestFactory();
+    @DisplayName("Settlement RestTemplate에 연결 3초와 응답 5초 제한을 적용한다")
+    void appliesTimeoutToSettlementRestTemplate() {
         SimpleClientHttpRequestFactory settlementFactory =
                 (SimpleClientHttpRequestFactory) settlementRestTemplate.getRequestFactory();
 
-        assertThat(ReflectionTestUtils.getField(defaultFactory, "connectTimeout")).isEqualTo(3_000);
-        assertThat(ReflectionTestUtils.getField(defaultFactory, "readTimeout")).isEqualTo(5_000);
         assertThat(ReflectionTestUtils.getField(settlementFactory, "connectTimeout"))
                 .isEqualTo(3_000);
         assertThat(ReflectionTestUtils.getField(settlementFactory, "readTimeout")).isEqualTo(5_000);

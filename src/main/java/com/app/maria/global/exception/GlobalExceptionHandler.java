@@ -231,6 +231,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponseDTO.of(e.getMessage()));
     }
 
+    @ExceptionHandler(SettlementAccountMismatchException.class)
+    public ResponseEntity<ApiResponseDTO<Void>> handleSettlementAccountMismatchException(
+            SettlementAccountMismatchException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponseDTO.of(e.getMessage()));
+    }
+
+    @ExceptionHandler(SettlementAccountNotFoundException.class)
+    public ResponseEntity<ApiResponseDTO<Void>> handleSettlementAccountNotFoundException(
+            SettlementAccountNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponseDTO.of(e.getMessage()));
+    }
+
     // 8. mydata 예외
     @ExceptionHandler(MydataApiException.class)
     public ResponseEntity<ApiResponseDTO<Void>> handleMydataApiException(MydataApiException e) {

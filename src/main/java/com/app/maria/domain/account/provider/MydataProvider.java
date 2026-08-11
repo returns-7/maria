@@ -10,9 +10,5 @@ public interface MydataProvider {
 
     MydataRiaAccountsResponseDTO getRiaAccounts(String ciHash);
 
-    boolean hasOwnRiaAccount(String ciHash);
-
-    HttpStatusCode createRiaAccount(String ciHash, AccountDTO account);
-
-    HttpStatusCode updateRiaLimit(String ciHash, AccountDTO account);
+    HttpStatusCode syncRiaAccount(String ciHash, AccountDTO account);
 }

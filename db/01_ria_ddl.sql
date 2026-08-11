@@ -320,7 +320,8 @@ CREATE TABLE left_amount (
     left_amount_id BIGINT        NOT NULL AUTO_INCREMENT,
     exchange_id    BIGINT        NOT NULL,
     cur_amount     DECIMAL(15,0) NOT NULL COMMENT '인출 후 남은 정산건별 원금(초기값 = krw_exchange.final_amount, 애플리케이션 세팅)',
-    PRIMARY KEY (left_amount_id)
+    PRIMARY KEY (left_amount_id),
+    UNIQUE KEY uk_left_amount_exchange_id (exchange_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='정산건별 잔여 원금(FIFO)';
 
 -- [NO-SEED] 계산 데이터(서비스/골든 시나리오로 생성). 생성기 무관.
@@ -389,8 +390,10 @@ CREATE TABLE settlement_batch (
     batch_id    BIGINT      NOT NULL AUTO_INCREMENT,
     executed_at DATETIME    NOT NULL COMMENT '배치 실행일시(일단위=익일정산)',
     status      VARCHAR(10) NOT NULL COMMENT 'RUNNING/COMPLETED/FAILED',
-    run_id      VARCHAR(50) NOT NULL COMMENT 'idempotency 추적용 실행ID',
+    run_id      VARCHAR(50) NOT NULL COMMENT '현재 실행 Job ID',
+    failure_message VARCHAR(500) NULL COMMENT '배치 실행 실패 사유',
     PRIMARY KEY (batch_id),
+    UNIQUE KEY uk_settlement_batch_run_id (run_id),
     CONSTRAINT chk_settlement_batch_status CHECK (status IN ('RUNNING','COMPLETED','FAILED'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='정산 배치';
 
@@ -401,7 +404,11 @@ CREATE TABLE settlement_item (
     exchange_id  BIGINT      NOT NULL COMMENT '처리 대상 환전 ID',
     result       VARCHAR(10) NULL     COMMENT 'NULL(대기)/SUCCESS/FAILED',
     processed_at DATETIME    NULL     COMMENT '개별 확정산 완료일시',
+    failure_code VARCHAR(50) NULL     COMMENT '실패 분류 코드',
+    failure_message VARCHAR(500) NULL COMMENT '실패 상세 사유',
     PRIMARY KEY (item_id),
+    KEY idx_settlement_item_batch_result (batch_id, result),
+    KEY idx_settlement_item_exchange_result (exchange_id, result),
     CONSTRAINT chk_settlement_item_result CHECK (result IN ('SUCCESS','FAILED'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='정산 배치 항목';
 

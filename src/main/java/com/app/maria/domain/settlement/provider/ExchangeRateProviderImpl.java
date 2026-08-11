@@ -1,5 +1,6 @@
 package com.app.maria.domain.settlement.provider;
 
+import com.app.maria.domain.settlement.exception.ExchangeRateExternalApiException;
 import com.app.maria.domain.settlement.exception.InvalidSettlementException;
 import com.app.maria.global.client.exchange.ExchangeRateClient;
 import com.app.maria.global.exception.ExchangeRateNotFoundException;
@@ -47,7 +48,7 @@ public class ExchangeRateProviderImpl implements ExchangeRateProvider {
                 lookupDate = lookupDate.minusDays(1);
                 continue;
             } catch (ExchangeRateApiException e) {
-                throw new ExchangeRateNotFoundException(e.getMessage(), e.getCause());
+                throw new ExchangeRateExternalApiException(e.getMessage(), e.getCause());
             }
             return finalRate;
         }
