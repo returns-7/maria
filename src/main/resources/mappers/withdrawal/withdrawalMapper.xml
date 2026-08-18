@@ -72,4 +72,89 @@
         ORDER BY ke.final_at ASC, ke.exchange_id ASC
     </select>
 
+    <select id="selectImmatureAllocatedAmountByWithdrawalId"
+            parameterType="Long"
+            resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(allocated_amount), 0)
+        FROM withdrawal_allocation
+        WHERE withdrawal_id = #{withdrawalId}
+        AND type = 'IMMATURE_PRINCIPAL_INCLUDED'
+    </select>
+
+    <sql id="withdrawalHistoryColumns">
+        SELECT w.withdrawal_id,
+               w.account_id,
+               c.name AS customer_name,
+               a.account_no AS ria_account_no,
+               w.requested_amount,
+               w.processed_at,
+               w.destination_account_no,
+               w.destination_general_account_id,
+               w.status,
+               COALESCE(SUM(CASE WHEN wa.type = 'EARNINGS_ONLY'
+                                 THEN wa.allocated_amount ELSE 0 END), 0) AS earnings_amount,
+               COALESCE(SUM(CASE WHEN wa.type = 'MATURED_PRINCIPAL_INCLUDED'
+                                 THEN wa.allocated_amount ELSE 0 END), 0) AS matured_principal_amount,
+               COALESCE(SUM(CASE WHEN wa.type = 'IMMATURE_PRINCIPAL_INCLUDED'
+                                 THEN wa.allocated_amount ELSE 0 END), 0) AS immature_principal_amount
+        FROM withdrawal w
+        JOIN account a ON a.account_id = w.account_id
+        JOIN customer c ON c.customer_id = a.customer_id
+        LEFT JOIN withdrawal_allocation wa ON wa.withdrawal_id = w.withdrawal_id
+    </sql>
+
+    <sql id="withdrawalHistoryGroupBy">
+        GROUP BY w.withdrawal_id, w.account_id, c.name, a.account_no,
+                 w.requested_amount, w.processed_at, w.destination_account_no,
+                 w.destination_general_account_id, w.status
+    </sql>
+
+    <select id="selectWithdrawalHistories"
+            resultType="com.app.maria.domain.withdrawal.dto.WithdrawalHistoryDTO">
+        <include refid="withdrawalHistoryColumns"/>
+        <if test="status != null">
+            WHERE w.status = #{status}
+        </if>
+        <include refid="withdrawalHistoryGroupBy"/>
+        ORDER BY w.processed_at DESC, w.withdrawal_id DESC
+    </select>
+
+    <select id="selectWithdrawalHistoriesByAccountId"
+            parameterType="Long"
+            resultType="com.app.maria.domain.withdrawal.dto.WithdrawalHistoryDTO">
+        <include refid="withdrawalHistoryColumns"/>
+        WHERE w.account_id = #{accountId}
+        <include refid="withdrawalHistoryGroupBy"/>
+        ORDER BY w.processed_at DESC, w.withdrawal_id DESC
+    </select>
+
+    <select id="selectWithdrawalHistoryById"
+            parameterType="Long"
+            resultType="com.app.maria.domain.withdrawal.dto.WithdrawalHistoryDTO">
+        <include refid="withdrawalHistoryColumns"/>
+        WHERE w.withdrawal_id = #{withdrawalId}
+        <include refid="withdrawalHistoryGroupBy"/>
+    </select>
+
+    <select id="selectAllocationHistoriesByWithdrawalId"
+            parameterType="Long"
+            resultType="com.app.maria.domain.withdrawal.dto.WithdrawalAllocationHistoryDTO">
+        SELECT wa.allocation_id,
+               wa.left_amount_id,
+               la.exchange_id,
+               wa.allocated_amount,
+               wa.withdrawal_at,
+               wa.type,
+               ke.final_at,
+               fp.name AS product_name,
+               fp.ticker
+        FROM withdrawal_allocation wa
+        LEFT JOIN left_amount la ON la.left_amount_id = wa.left_amount_id
+        LEFT JOIN krw_exchange ke ON ke.exchange_id = la.exchange_id
+        LEFT JOIN sell_order so ON so.order_id = ke.order_id
+        LEFT JOIN foreign_product fp ON fp.foreign_product_id = so.foreign_product_id
+        WHERE wa.withdrawal_id = #{withdrawalId}
+        ORDER BY wa.allocation_id ASC
+    </select>
+
 </mapper>

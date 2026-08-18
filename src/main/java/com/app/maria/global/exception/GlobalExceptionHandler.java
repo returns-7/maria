@@ -10,6 +10,8 @@ import com.app.maria.domain.accountclosure.exception.AccountClosureProcessingExc
 import com.app.maria.domain.accountclosure.exception.AccountClosureStateConflictException;
 import com.app.maria.domain.admin.exception.AdminException;
 import com.app.maria.domain.admin.exception.AdminNotFoundException;
+import com.app.maria.domain.domestic.exception.DomesticInvestmentException;
+import com.app.maria.domain.domestic.exception.DomesticInvestmentNotFoundException;
 import com.app.maria.domain.domestic.exception.DomesticProductException;
 import com.app.maria.domain.domestic.exception.DomesticProductNotFoundException;
 import com.app.maria.domain.foreignproduct.exception.ForeignProductException;
@@ -25,6 +27,7 @@ import com.app.maria.domain.tax.exception.TaxCalculationAlreadyExistsException;
 import com.app.maria.domain.tax.exception.TaxCalculationException;
 import com.app.maria.domain.tax.exception.TaxRuleNotFoundException;
 import com.app.maria.domain.withdrawal.exception.WithdrawalException;
+import com.app.maria.domain.withdrawal.exception.WithdrawalNotFoundException;
 import com.app.maria.domain.withdrawal.exception.WithdrawalProcessingException;
 import com.app.maria.global.audit.exception.AuditLogException;
 import com.app.maria.global.audit.exception.AuditLogInsertException;
@@ -270,6 +273,12 @@ public class GlobalExceptionHandler {
     }
 
     // 10. Withdrawal 예외
+    @ExceptionHandler(WithdrawalNotFoundException.class)
+    public ResponseEntity<ApiResponseDTO<Void>> handleWithdrawalNotFoundException(
+            WithdrawalNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponseDTO.of(e.getMessage()));
+    }
+
     @ExceptionHandler(WithdrawalException.class)
     public ResponseEntity<ApiResponseDTO<Void>> handleWithdrawalException(WithdrawalException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
@@ -390,5 +399,19 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponseDTO<Void>> handleAccountClosureStateConflictException(
             AccountClosureStateConflictException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponseDTO.of(e.getMessage()));
+    }
+
+    // 18. 국내 투자 예외
+    @ExceptionHandler(DomesticInvestmentException.class)
+    public ResponseEntity<ApiResponseDTO<Void>> handleDomesticInvestmentException(
+            DomesticInvestmentException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponseDTO.of(e.getMessage()));
+    }
+
+    @ExceptionHandler(DomesticInvestmentNotFoundException.class)
+    public ResponseEntity<ApiResponseDTO<Void>> handleDomesticInvestmentNotFound(
+            DomesticInvestmentNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponseDTO.of(e.getMessage()));
     }
 }

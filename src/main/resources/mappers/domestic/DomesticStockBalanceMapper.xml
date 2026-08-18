@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.app.maria.domain.domestic.mapper.DomesticStockBalanceMapper">
+
+    <sql id="accountSummaryColumns">
+        a.account_id AS accountId,
+        a.account_no AS accountNo,
+        c.name AS customerName,
+        a.amount AS cashAmount,
+        COUNT(CASE WHEN dsb.status NOT IN ('SOLD_OUT', 'TERMINATED') THEN 1 END) AS holdingCount,
+        MAX(CASE WHEN dsb.status IN ('TRADE_RESTRICTED', 'TRADE_SUSPENDED') THEN 1 ELSE 0 END) AS
+        hasRestrictedHolding
+    </sql>
+
+    <sql id="accountSummaryFrom">
+        FROM account a
+        JOIN customer c ON c.customer_id = a.customer_id
+        LEFT JOIN domestic_stock_balance dsb ON dsb.account_id = a.account_id
+    </sql>
+
+    <sql id="accountSummaryWhere">
+        <where>
+            a.status = 'OPENED'
+            <if test="customerName != null and customerName != ''">
+                AND c.name LIKE CONCAT('%', #{customerName}, '%')
+            </if>
+            <if test="status != null">
+                AND EXISTS (
+                SELECT 1 FROM domestic_stock_balance dsb2
+                WHERE dsb2.account_id = a.account_id AND dsb2.status = #{status}
+                )
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectAccountSummaries" parameterType="DomesticInvestmentSearchDTO" resultType="DomesticInvestmentListDTO">
+        SELECT
+        <include refid="accountSummaryColumns"/>
+        <include refid="accountSummaryFrom"/>
+        <include refid="accountSummaryWhere"/>
+        GROUP BY a.account_id, a.account_no, c.name, a.amount
+        ORDER BY a.account_id
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countAccountSummaries" parameterType="DomesticInvestmentSearchDTO" resultType="int">
+        SELECT COUNT(*) FROM (
+        SELECT a.account_id
+        <include refid="accountSummaryFrom"/>
+        <include refid="accountSummaryWhere"/>
+        GROUP BY a.account_id
+        ) counted
+    </select>
+
+    <select id="selectAccountSummaryById" resultType="DomesticInvestmentListDTO">
+        SELECT
+        <include refid="accountSummaryColumns"/>
+        <include refid="accountSummaryFrom"/>
+        WHERE a.account_id = #{accountId}
+        GROUP BY a.account_id, a.account_no, c.name, a.amount
+    </select>
+
+    <select id="selectHoldingsByAccountId" resultType="DomesticHoldingDTO">
+        SELECT
+        dp.domestic_product_id AS domesticProductId,
+        dp.ticker AS ticker,
+        dp.name AS name,
+        dp.type AS type,
+        dp.domestic_stock_ratio AS domesticStockRatio,
+        dp.inception_date AS inceptionDate,
+        dsb.qty AS qty,
+        dsb.status AS status,
+        dsb.last_purchase_date AS lastPurchaseDate,
+        dsb.avg_purchase_price AS avgPurchasePrice
+        FROM domestic_stock_balance dsb
+        JOIN domestic_product dp ON dp.domestic_product_id = dsb.domestic_product_id
+        WHERE dsb.account_id = #{accountId}
+        ORDER BY dsb.last_purchase_date DESC
+    </select>
+
+</mapper>

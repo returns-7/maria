@@ -3,7 +3,6 @@
       xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
       layout:decorate="~{layout/main}">
 <head>
-    <title>관리자 - MARIA</title>
     <th:block layout:fragment="pageStyles">
         <link rel="stylesheet" th:href="@{/css/admin-users.css}">
     </th:block>
@@ -15,7 +14,6 @@
     <div class="admin-users-header">
         <div>
             <h1 class="admin-users-title">관리자 계정 관리</h1>
-            <p class="admin-users-description">역할 변경은 ADMIN 권한만 가능합니다.</p>
         </div>
         <span class="admin-users-count" id="adminUserCount">-</span>
     </div>

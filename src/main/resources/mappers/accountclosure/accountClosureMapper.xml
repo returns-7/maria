@@ -53,16 +53,26 @@
     </update>
 
     <select id = "selectByStatus" resultType="AccountClosureDTO" >
-        SELECT *
-        FROM account_closure_request
-        WHERE status = #{status}
-        ORDER BY requested_at ASC, closure_request_id ASC
+        SELECT acr.*,
+               c.name AS customer_name,
+               a.account_no AS account_no,
+               a.amount AS account_amount
+        FROM account_closure_request acr
+        JOIN account a ON a.account_id = acr.account_id
+        JOIN customer c ON c.customer_id = a.customer_id
+        WHERE acr.status = #{status}
+        ORDER BY acr.requested_at ASC, acr.closure_request_id ASC
     </select>
 
     <select id="selectById" parameterType="Long" resultType="AccountClosureDTO">
-        SELECT *
-        FROM account_closure_request
-        WHERE closure_request_id = #{closureRequestId}
+        SELECT acr.*,
+               c.name AS customer_name,
+               a.account_no AS account_no,
+               a.amount AS account_amount
+        FROM account_closure_request acr
+        JOIN account a ON a.account_id = acr.account_id
+        JOIN customer c ON c.customer_id = a.customer_id
+        WHERE acr.closure_request_id = #{closureRequestId}
     </select>
 
 

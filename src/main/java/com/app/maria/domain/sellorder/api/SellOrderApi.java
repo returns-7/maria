@@ -1,20 +1,30 @@
 package com.app.maria.domain.sellorder.api;
 
+import com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO;
 import com.app.maria.domain.sellorder.dto.request.SellOrderRequestDTO;
+import com.app.maria.domain.sellorder.dto.response.SellOrderHistoryResponseDTO;
 import com.app.maria.domain.sellorder.dto.response.SellOrderResponseDTO;
 import com.app.maria.domain.sellorder.service.SellOrderService;
+import com.app.maria.domain.sellorder.type.SellOrderStatus;
 import com.app.maria.global.response.ApiResponseDTO;
+import com.app.maria.global.response.PageResponseDTO;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
+import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequiredArgsConstructor
+@Validated
 @RequestMapping("/api/sell-orders")
 public class SellOrderApi {
 
@@ -52,5 +62,27 @@ public class SellOrderApi {
             @RequestParam Long accountId) {
         List<SellOrderResponseDTO> list = sellOrderService.getSellOrderByAccount(accountId);
         return ResponseEntity.ok(ApiResponseDTO.of("계좌 매도 주문 조회에 성공하였습니다.", list));
+    }
+
+    @GetMapping("/history")
+    public ResponseEntity<ApiResponseDTO<PageResponseDTO<SellOrderHistoryResponseDTO>>>
+            getSellOrderHistory(
+                    @RequestParam(required = false) String keyword,
+                    @RequestParam(required = false) SellOrderStatus status,
+                    @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                            LocalDate startDate,
+                    @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                            LocalDate endDate,
+                    @RequestParam(defaultValue = "0") @PositiveOrZero int page,
+                    @RequestParam(defaultValue = "20") @Positive int size) {
+        PageResponseDTO<SellOrderHistoryDTO> result =
+                sellOrderService.getSellOrderHistory(
+                        keyword, status, startDate, endDate, page, size);
+        List<SellOrderHistoryResponseDTO> content =
+                result.getContent().stream().map(SellOrderHistoryResponseDTO::new).toList();
+        PageResponseDTO<SellOrderHistoryResponseDTO> response =
+                PageResponseDTO.of(
+                        content, result.getTotalCount(), result.getPage(), result.getSize());
+        return ResponseEntity.ok(ApiResponseDTO.of("매도 · 환전 내역 조회 성공", response));
     }
 }

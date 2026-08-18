@@ -133,7 +133,14 @@ dependencies {
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // GoldenScenarioTest처럼 실제 DB/외부 서비스(securities:10001 등)가 떠 있어야 하는
+        // 데이터 생성기는 일반 CI/./gradlew test에서 제외한다.
+        // 수동 실행: ./gradlew test --tests "...GoldenScenarioTest" -PrunIntegration
+        if (!project.hasProperty('runIntegration')) {
+            excludeTags 'integration'
+        }
+    }
     finalizedBy tasks.named('jacocoTestReport')
 }
 spotless{

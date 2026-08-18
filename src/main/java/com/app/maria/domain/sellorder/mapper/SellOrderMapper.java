@@ -1,6 +1,7 @@
 package com.app.maria.domain.sellorder.mapper;
 
 import com.app.maria.domain.sellorder.dto.SellOrderDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,4 +22,18 @@ public interface SellOrderMapper {
             @Param("inboundDetailIds") List<Long> inboundDetailIds);
 
     BigDecimal sumSellAmountBetween(LocalDateTime start, LocalDateTime end);
+
+    List<SellOrderHistoryDTO> selectSellOrderHistory(
+            @Param("keyword") String keyword,
+            @Param("status") String status,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("offset") int offset,
+            @Param("size") int size);
+
+    int countSellOrderHistory(
+            @Param("keyword") String keyword,
+            @Param("status") String status,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
 }

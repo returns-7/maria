@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <th:block layout:fragment="pageStyles">
+        <link rel="stylesheet" th:href="@{/css/dashboard.css}">
+        <link rel="stylesheet" th:href="@{/css/sell-order.css}">
+    </th:block>
+</head>
+<body>
+<div layout:fragment="breadcrumb">매도 · 환전</div>
+
+<div layout:fragment="content" class="sellorder">
+    <div class="sellorder-header">
+        <div>
+            <h1 class="sellorder-page-title">매도 · 환전</h1>
+        </div>
+    </div>
+
+    <section class="card sellorder-history">
+        <div class="section-header">
+            <span>매도 · 환전 내역</span>
+            <span class="section-sub" id="sellOrderCount">0건</span>
+        </div>
+        <div class="filter-bar sellorder-filter-bar">
+            <select id="sellOrderFilterStatus" class="filter-select">
+                <option value="">전체 상태</option>
+                <option value="EXECUTED">체결</option>
+                <option value="REJECTED">거부</option>
+            </select>
+            <input id="sellOrderFilterStartDate" class="filter-input sellorder-filter-date" type="date">
+            <span class="sellorder-filter-date-separator">~</span>
+            <input id="sellOrderFilterEndDate" class="filter-input sellorder-filter-date" type="date">
+            <input id="sellOrderFilterKeyword" class="filter-input sellorder-filter-keyword" type="text" placeholder="계좌번호 또는 고객명" autocomplete="off">
+            <button type="button" id="sellOrderFilterSearch" class="btn btn-primary">검색</button>
+            <button type="button" id="sellOrderFilterReset" class="btn">초기화</button>
+        </div>
+        <p id="sellOrderError" class="sellorder-form-error" style="display:none"></p>
+
+        <div class="sellorder-table-wrap">
+            <table class="sellorder-table">
+                <colgroup>
+                    <col style="width: 11%">
+                    <col style="width: 18%">
+                    <col style="width: 9%">
+                    <col style="width: 12%">
+                    <col style="width: 15%">
+                    <col style="width: 12%">
+                    <col style="width: 12%">
+                    <col style="width: 11%">
+                </colgroup>
+                <thead>
+                <tr>
+                    <th>계좌번호 / 고객명</th>
+                    <th>종목</th>
+                    <th>매도수량</th>
+                    <th>매도기준가</th>
+                    <th>매도시각</th>
+                    <th>가환전액</th>
+                    <th>확정액</th>
+                    <th>상태</th>
+                </tr>
+                </thead>
+                <tbody id="sellOrderListBody">
+                <tr>
+                    <td colspan="8" class="sellorder-loading">불러오는 중...</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="pagination" id="sellOrderPagination"></div>
+    </section>
+</div>
+
+<th:block layout:fragment="pageScripts">
+    <script th:src="@{/js/sell-order.js}"></script>
+</th:block>
+</body>
+</html>

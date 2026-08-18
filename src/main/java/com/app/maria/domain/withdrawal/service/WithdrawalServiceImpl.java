@@ -307,14 +307,24 @@ public class WithdrawalServiceImpl implements WithdrawalService {
 
     @Override
     public boolean hasImmaturePrincipal(Long accountId) {
+        return getImmaturePrincipalAmount(accountId).compareTo(BigDecimal.ZERO) > 0;
+    }
+
+    @Override
+    public BigDecimal getImmaturePrincipalAmount(Long accountId) {
         List<LeftAmountDTO> leftAmounts =
                 withdrawalMapper.selectAvailableLeftAmountsByAccountId(accountId);
 
         LocalDateTime currentDatetime = businessClockService.now();
 
         return leftAmounts.stream()
-                .anyMatch(
-                        leftAmount ->
-                                leftAmount.getFinalAt().plusYears(1).isAfter(currentDatetime));
+                .filter(leftAmount -> leftAmount.getFinalAt().plusYears(1).isAfter(currentDatetime))
+                .map(LeftAmountDTO::getCurAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    @Override
+    public BigDecimal getImmatureAllocatedAmount(Long withdrawalId) {
+        return withdrawalMapper.selectImmatureAllocatedAmountByWithdrawalId(withdrawalId);
     }
 }

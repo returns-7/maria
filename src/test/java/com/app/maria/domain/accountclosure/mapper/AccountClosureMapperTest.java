@@ -198,6 +198,13 @@ class AccountClosureMapperTest {
                         laterRequested.getClosureRequestId());
         assertThat(requested)
                 .allMatch(closure -> closure.getStatus() == AccountClosureStatus.REQUESTED);
+        assertThat(requested)
+                .allSatisfy(
+                        closure -> {
+                            assertThat(closure.getCustomerName()).isEqualTo("조회 고객");
+                            assertThat(closure.getAccountNo()).isEqualTo("1234567890");
+                            assertThat(closure.getAccountAmount()).isEqualByComparingTo("1000");
+                        });
     }
 
     @Test
@@ -209,6 +216,9 @@ class AccountClosureMapperTest {
 
         assertThat(found.getClosureRequestId()).isEqualTo(request.getClosureRequestId());
         assertThat(found.getAccountId()).isEqualTo(ACCOUNT_ID);
+        assertThat(found.getCustomerName()).isEqualTo("조회 고객");
+        assertThat(found.getAccountNo()).isEqualTo("1234567890");
+        assertThat(found.getAccountAmount()).isEqualByComparingTo("1000");
         assertThat(found.getDestinationGeneralAccountId()).isEqualTo(20L);
         assertThat(found.getStatus()).isEqualTo(AccountClosureStatus.REQUESTED);
     }
@@ -262,6 +272,13 @@ class AccountClosureMapperTest {
             statement.execute("DROP ALL OBJECTS");
             statement.execute(
                     """
+                    CREATE TABLE customer (
+                        customer_id BIGINT PRIMARY KEY,
+                        name VARCHAR(50) NOT NULL
+                    )
+                    """);
+            statement.execute(
+                    """
                     CREATE TABLE account (
                         account_id BIGINT PRIMARY KEY,
                         customer_id BIGINT NOT NULL,
@@ -273,6 +290,11 @@ class AccountClosureMapperTest {
                         amount DECIMAL(15, 2) NOT NULL,
                         benefit VARCHAR(20) NULL
                     )
+                    """);
+            statement.execute(
+                    """
+                    INSERT INTO customer (customer_id, name)
+                    VALUES (10, '조회 고객')
                     """);
             statement.execute(
                     """

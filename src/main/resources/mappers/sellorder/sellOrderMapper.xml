@@ -39,4 +39,35 @@
         AND status IN ('RECEIVED', 'EXECUTED')
     </select>
 
+    <sql id="sellOrderHistoryFilter">
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (acc.account_no LIKE CONCAT('%',#{keyword},'%') OR c.name LIKE CONCAT('%',#{keyword},'%'))
+            </if>
+            <if test="status != null and status != ''">AND s.status = #{status}</if>
+            <if test="startDate != null">AND s.processed_at &gt;= #{startDate}</if>
+            <if test="endDate != null">AND s.processed_at &lt;= #{endDate}</if>
+        </where>
+    </sql>
+
+    <select id="selectSellOrderHistory" resultType="SellOrderHistoryDTO">
+        SELECT s.sell_qty, s.base_price, s.processed_at, s.status,
+            krw.provisional_amount, krw.final_amount, acc.account_no, c.name AS customerName, fp.ticker, fp.name AS name
+        FROM sell_order s LEFT JOIN krw_exchange krw ON krw.order_id = s.order_id
+            LEFT JOIN account acc ON acc.account_id = s.account_id
+            LEFT JOIN customer c ON c.customer_id = acc.customer_id
+            LEFT JOIN foreign_product fp ON fp.foreign_product_id = s.foreign_product_id
+        <include refid="sellOrderHistoryFilter"/>
+        ORDER BY s.processed_at DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countSellOrderHistory" resultType="int">
+        SELECT COUNT(*)
+        FROM sell_order s
+        LEFT JOIN account acc ON acc.account_id = s.account_id
+        LEFT JOIN customer c ON c.customer_id = acc.customer_id
+        <include refid="sellOrderHistoryFilter"/>
+    </select>
+
 </mapper>

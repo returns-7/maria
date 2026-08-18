@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.app.maria.domain.accountclosure.dto.request.AccountClosureApplyRequestDTO;
+import com.app.maria.domain.accountclosure.dto.response.AccountClosureDetailResponseDTO;
 import com.app.maria.domain.accountclosure.dto.response.AccountClosureResponseDTO;
 import com.app.maria.domain.accountclosure.exception.AccountClosureNotAllowedException;
 import com.app.maria.domain.accountclosure.exception.AccountClosureNotFoundException;
@@ -22,6 +23,7 @@ import com.app.maria.domain.accountclosure.service.AccountClosureService;
 import com.app.maria.domain.accountclosure.type.AccountClosureStatus;
 import com.app.maria.global.exception.GlobalExceptionHandler;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -281,6 +283,8 @@ class AccountClosureApiTest {
                 .andExpect(jsonPath("$.message").value("계좌 해지 신청 목록 조회 완료"))
                 .andExpect(jsonPath("$.data.length()").value(1))
                 .andExpect(jsonPath("$.data[0].closureRequestId").value(30))
+                .andExpect(jsonPath("$.data[0].customerName").value("조회 고객"))
+                .andExpect(jsonPath("$.data[0].accountNo").value("1234567890"))
                 .andExpect(jsonPath("$.data[0].status").value("REQUESTED"));
 
         verify(accountClosureService).getClosures(AccountClosureStatus.REQUESTED);
@@ -301,15 +305,21 @@ class AccountClosureApiTest {
     @Test
     void closureDetailReturnsAllReviewFields() throws Exception {
         when(accountClosureService.getClosure(30L))
-                .thenReturn(response(AccountClosureStatus.REQUESTED));
+                .thenReturn(detailResponse(AccountClosureStatus.REQUESTED));
 
         mockMvc.perform(get("/api/account-closures/30"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("계좌 해지 신청 상세 조회 완료"))
                 .andExpect(jsonPath("$.data.closureRequestId").value(30))
-                .andExpect(jsonPath("$.data.accountId").value(1))
+                .andExpect(jsonPath("$.data.customerName").value("조회 고객"))
+                .andExpect(jsonPath("$.data.accountNo").value("1234567890"))
+                .andExpect(jsonPath("$.data.accountAmount").value(1000))
                 .andExpect(jsonPath("$.data.destinationGeneralAccountId").value(20))
                 .andExpect(jsonPath("$.data.earlyWithdrawalAgreed").value(true))
+                .andExpect(jsonPath("$.data.hasImmaturePrincipal").value(true))
+                .andExpect(jsonPath("$.data.immaturePrincipalAmount").value(400))
+                .andExpect(jsonPath("$.data.taxBenefitCancellationExpected").value(true))
+                .andExpect(jsonPath("$.data.taxBenefitCancellationOccurred").value(false))
                 .andExpect(jsonPath("$.data.status").value("REQUESTED"))
                 .andExpect(jsonPath("$.data.requestedAt").value("2026-08-12T09:00:00"));
 
@@ -336,9 +346,25 @@ class AccountClosureApiTest {
     private static AccountClosureResponseDTO response(AccountClosureStatus status) {
         return AccountClosureResponseDTO.builder()
                 .closureRequestId(30L)
-                .accountId(1L)
+                .customerName("조회 고객")
+                .accountNo("1234567890")
+                .status(status)
+                .requestedAt(LocalDateTime.of(2026, 8, 12, 9, 0))
+                .build();
+    }
+
+    private static AccountClosureDetailResponseDTO detailResponse(AccountClosureStatus status) {
+        return AccountClosureDetailResponseDTO.builder()
+                .closureRequestId(30L)
+                .customerName("조회 고객")
+                .accountNo("1234567890")
+                .accountAmount(new BigDecimal("1000"))
                 .destinationGeneralAccountId(20L)
                 .earlyWithdrawalAgreed(true)
+                .hasImmaturePrincipal(true)
+                .immaturePrincipalAmount(new BigDecimal("400"))
+                .taxBenefitCancellationExpected(true)
+                .taxBenefitCancellationOccurred(false)
                 .status(status)
                 .requestedAt(LocalDateTime.of(2026, 8, 12, 9, 0))
                 .build();

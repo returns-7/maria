@@ -112,7 +112,7 @@ a {
 .card {
     background: var(--cardBg);
     border: 1px solid var(--cardBorder);
-    border-radius: 6px;
+    border-radius: 3px;
 }
 
 .btn {
@@ -176,12 +176,14 @@ a {
 
 .app-shell {
     display: flex;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
 }
 
 .sidebar {
     width: 216px;
     flex: none;
+    min-height: 0;
     background: #2c3444;
     border-right: 1px solid rgba(255, 255, 255, 0.16);
     display: flex;
@@ -281,6 +283,7 @@ a.sidebar-item:hover {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 0;
 }
 
 .topbar {
@@ -326,6 +329,21 @@ a.sidebar-item:hover {
     border: 1px solid var(--inputBorder);
     border-radius: 4px;
     padding: 5px 9px;
+    background: var(--inputBg);
+    font-family: inherit;
+}
+
+.clock-badge.is-editable {
+    cursor: pointer;
+}
+
+.clock-badge.is-editable:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accentBg);
+}
+
+.clock-badge:disabled {
+    opacity: 1;
 }
 
 .clock-badge-label {
@@ -344,13 +362,6 @@ a.sidebar-item:hover {
     gap: 6px;
     font: 600 12px 'Noto Sans KR', sans-serif;
     color: var(--textSecondary);
-}
-
-.admin-avatar {
-    width: 26px;
-    height: 26px;
-    border-radius: 4px;
-    background: var(--inputBorder);
 }
 
 .theme-toggle {
@@ -378,6 +389,7 @@ a.sidebar-item:hover {
 
 .content {
     flex: 1;
+    min-height: 0;
     padding: 16px 20px;
     overflow: auto;
 }
@@ -387,4 +399,121 @@ a.sidebar-item:hover {
     background-repeat: no-repeat;
     background-position: center;
     background-size: contain;
+}
+
+.clock-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.clock-modal-backdrop[hidden] {
+    display: none;
+}
+
+.clock-modal {
+    width: min(460px, 100%);
+    border: 1px solid var(--divider);
+    border-radius: 10px;
+    background: var(--cardBg);
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.3);
+}
+
+.clock-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 22px 16px;
+    border-bottom: 1px solid var(--divider);
+}
+
+.clock-modal-header h2 {
+    margin: 0;
+    color: var(--textPrimary);
+    font-size: 18px;
+}
+
+.clock-modal-header p {
+    margin: 6px 0 0;
+    color: var(--textMuted);
+    font-size: 12px;
+}
+
+.clock-modal-close {
+    border: 0;
+    background: transparent;
+    color: var(--textMuted);
+    cursor: pointer;
+    font-size: 24px;
+    line-height: 1;
+}
+
+.clock-modal-body {
+    display: grid;
+    gap: 9px;
+    padding: 20px 22px;
+}
+
+.clock-modal-body label {
+    color: var(--textSecondary);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.clock-modal-body input {
+    width: 100%;
+    border: 1px solid var(--inputBorder);
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: var(--inputBg);
+    color: var(--textPrimary);
+    font: 500 13px 'Noto Sans KR', sans-serif;
+}
+
+.clock-modal-body input:focus {
+    border-color: var(--accent);
+    outline: 2px solid var(--accentBg);
+}
+
+.clock-modal-help {
+    margin: 0;
+    color: var(--textMuted);
+    font-size: 11px;
+}
+
+.clock-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 22px 20px;
+}
+
+.clock-modal-actions button {
+    border-radius: 6px;
+    padding: 9px 16px;
+    cursor: pointer;
+    font: 600 12px 'Noto Sans KR', sans-serif;
+}
+
+.clock-modal-cancel {
+    border: 1px solid var(--inputBorder);
+    background: var(--inputBg);
+    color: var(--textSecondary);
+}
+
+.clock-modal-apply {
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #ffffff;
+}
+
+.clock-modal-apply:disabled {
+    cursor: wait;
+    opacity: 0.65;
 }

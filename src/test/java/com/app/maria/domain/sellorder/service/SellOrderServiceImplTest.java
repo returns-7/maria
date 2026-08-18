@@ -12,6 +12,7 @@ import com.app.maria.domain.foreignproduct.mapper.ForeignProductMapper;
 import com.app.maria.domain.inbound.dto.InboundDetailDTO;
 import com.app.maria.domain.inbound.mapper.InboundMapper;
 import com.app.maria.domain.sellorder.dto.SellOrderDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO;
 import com.app.maria.domain.sellorder.dto.request.SellOrderRequestDTO;
 import com.app.maria.domain.sellorder.dto.response.SellOrderResponseDTO;
 import com.app.maria.domain.sellorder.exception.SellOrderException;
@@ -25,7 +26,9 @@ import com.app.maria.global.client.exchange.ExchangeRateClient;
 import com.app.maria.global.client.kis.KisPriceClient;
 import com.app.maria.global.clock.service.BusinessClockService;
 import com.app.maria.global.exception.KisPriceNotFoundException;
+import com.app.maria.global.response.PageResponseDTO;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -389,5 +392,84 @@ class SellOrderServiceImplTest {
 
         assertThatThrownBy(() -> sellOrderService.getSellOrder(999L))
                 .isInstanceOf(SellOrderNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("page와 size로 offset을 계산해서 매퍼에 넘기고, 목록/건수를 PageResponseDTO로 감싸 반환한다")
+    void getSellOrderHistoryComputesOffsetAndWrapsMapperResultsInPageResponse() {
+        List<SellOrderHistoryDTO> content =
+                List.of(SellOrderHistoryDTO.builder().accountNo("1000000001").build());
+        when(sellOrderMapper.selectSellOrderHistory(null, null, null, null, 40, 20))
+                .thenReturn(content);
+        when(sellOrderMapper.countSellOrderHistory(null, null, null, null)).thenReturn(45);
+
+        PageResponseDTO<SellOrderHistoryDTO> result =
+                sellOrderService.getSellOrderHistory(null, null, null, null, 2, 20);
+
+        assertThat(result.getContent()).isEqualTo(content);
+        assertThat(result.getTotalCount()).isEqualTo(45);
+        assertThat(result.getPage()).isEqualTo(2);
+        assertThat(result.getSize()).isEqualTo(20);
+        verify(sellOrderMapper).selectSellOrderHistory(null, null, null, null, 40, 20);
+        verify(sellOrderMapper).countSellOrderHistory(null, null, null, null);
+    }
+
+    @Test
+    @DisplayName("keyword 필터를 그대로 매퍼에 전달한다")
+    void getSellOrderHistoryPassesKeywordThroughToMapper() {
+        when(sellOrderMapper.selectSellOrderHistory("1234567890", null, null, null, 0, 20))
+                .thenReturn(List.of());
+        when(sellOrderMapper.countSellOrderHistory("1234567890", null, null, null)).thenReturn(0);
+
+        sellOrderService.getSellOrderHistory("1234567890", null, null, null, 0, 20);
+
+        verify(sellOrderMapper).selectSellOrderHistory("1234567890", null, null, null, 0, 20);
+        verify(sellOrderMapper).countSellOrderHistory("1234567890", null, null, null);
+    }
+
+    @Test
+    @DisplayName("status는 enum 이름 문자열로 변환해서 매퍼에 전달한다")
+    void getSellOrderHistoryConvertsStatusEnumToNameForMapper() {
+        when(sellOrderMapper.selectSellOrderHistory(null, "REJECTED", null, null, 0, 20))
+                .thenReturn(List.of());
+        when(sellOrderMapper.countSellOrderHistory(null, "REJECTED", null, null)).thenReturn(0);
+
+        sellOrderService.getSellOrderHistory(null, SellOrderStatus.REJECTED, null, null, 0, 20);
+
+        verify(sellOrderMapper).selectSellOrderHistory(null, "REJECTED", null, null, 0, 20);
+        verify(sellOrderMapper).countSellOrderHistory(null, "REJECTED", null, null);
+    }
+
+    @Test
+    @DisplayName("startDate/endDate는 각각 그 날의 00:00:00과 23:59:59로 변환해서 매퍼에 전달한다")
+    void getSellOrderHistoryConvertsDateRangeToStartAndEndOfDayForMapper() {
+        LocalDate startDate = LocalDate.of(2026, 8, 1);
+        LocalDate endDate = LocalDate.of(2026, 8, 10);
+        LocalDateTime expectedStart = LocalDateTime.of(2026, 8, 1, 0, 0, 0);
+        LocalDateTime expectedEnd = LocalDateTime.of(2026, 8, 10, 23, 59, 59);
+        when(sellOrderMapper.selectSellOrderHistory(null, null, expectedStart, expectedEnd, 0, 20))
+                .thenReturn(List.of());
+        when(sellOrderMapper.countSellOrderHistory(null, null, expectedStart, expectedEnd))
+                .thenReturn(0);
+
+        sellOrderService.getSellOrderHistory(null, null, startDate, endDate, 0, 20);
+
+        verify(sellOrderMapper)
+                .selectSellOrderHistory(null, null, expectedStart, expectedEnd, 0, 20);
+        verify(sellOrderMapper).countSellOrderHistory(null, null, expectedStart, expectedEnd);
+    }
+
+    @Test
+    @DisplayName("매도 이력이 없으면 빈 목록과 0건을 담은 PageResponseDTO를 반환한다")
+    void getSellOrderHistoryReturnsEmptyPageWhenNoOrdersExist() {
+        when(sellOrderMapper.selectSellOrderHistory(null, null, null, null, 0, 20))
+                .thenReturn(List.of());
+        when(sellOrderMapper.countSellOrderHistory(null, null, null, null)).thenReturn(0);
+
+        PageResponseDTO<SellOrderHistoryDTO> result =
+                sellOrderService.getSellOrderHistory(null, null, null, null, 0, 20);
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalCount()).isZero();
     }
 }

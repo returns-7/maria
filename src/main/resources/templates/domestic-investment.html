@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <th:block layout:fragment="pageStyles">
+        <link rel="stylesheet" th:href="@{/css/dashboard.css}">
+        <link rel="stylesheet" th:href="@{/css/domestic-investment.css}">
+    </th:block>
+</head>
+<body>
+<div layout:fragment="breadcrumb">국내투자 현황</div>
+<div layout:fragment="content">
+    <div id="diLoading" class="dash-loading">불러오는 중...</div>
+    <div id="diError" class="dash-error" style="display:none"></div>
+    <div id="diBody" style="display:none">
+        <div class="di-layout">
+            <div class="card di-list-card">
+                <div class="section-header">
+                    <span>계좌 목록</span>
+                    <span class="section-sub" id="diListCount">0건 수신</span>
+                </div>
+                <div class="filter-bar di-filter-bar">
+                    <input type="text" id="diFilterCustomerName" class="filter-input" placeholder="고객명 검색">
+                    <select id="diFilterStatus" class="filter-select">
+                        <option value="">전체 상태</option>
+                        <option value="HOLDING">보유중</option>
+                        <option value="PARTIALLY_SOLD">일부매도</option>
+                        <option value="SOLD_OUT">전량매도</option>
+                        <option value="TRADE_RESTRICTED">거래제한</option>
+                        <option value="TRADE_SUSPENDED">거래정지</option>
+                        <option value="TERMINATED">보유종료</option>
+                    </select>
+                    <button type="button" id="diFilterSubmit" class="btn btn-primary">검색</button>
+                    <button type="button" id="diFilterReset" class="btn">초기화</button>
+                </div>
+                <div id="diListItems" class="di-list-items"></div>
+                <div id="diPagination" class="pagination"></div>
+            </div>
+            <div class="card di-detail-card" id="diDetail">
+                <div class="dash-empty">왼쪽에서 계좌를 선택하세요.</div>
+            </div>
+        </div>
+    </div>
+</div>
+<th:block layout:fragment="pageScripts">
+    <script th:src="@{/js/domestic-investment.js}"></script>
+</th:block>
+</body>
+</html>

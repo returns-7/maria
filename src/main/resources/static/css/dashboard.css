@@ -277,3 +277,33 @@
     font: 500 12px 'Noto Sans KR', sans-serif;
     padding: 0 2px;
 }
+
+.filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.filter-input,
+.filter-select {
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--inputBorder);
+    border-radius: 4px;
+    background: var(--inputBg);
+    color: var(--textPrimary);
+    font: 400 13px 'Noto Sans KR', sans-serif;
+}
+
+.filter-input {
+    flex: 1;
+    min-width: 160px;
+}
+
+.filter-input:focus,
+.filter-select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+

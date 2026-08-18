@@ -22,12 +22,6 @@
     color: var(--textPrimary);
 }
 
-.login-subtitle {
-    font: 500 12px 'Noto Sans KR', sans-serif;
-    color: var(--textMuted);
-    margin: 0 0 20px;
-}
-
 .login-label {
     display: block;
     font: 600 11.5px 'Noto Sans KR', sans-serif;

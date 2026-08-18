@@ -28,6 +28,9 @@ public class AuditLogSearchRequestDTO {
                     Map.entry("ACCOUNT_OPENED", "계좌 개설"),
                     Map.entry("ACCOUNT_REJECTED", "계좌 반려"),
                     Map.entry("ACCOUNT_OVERRIDE_OPENED", "계좌 오버라이드 개설"),
+                    Map.entry("ACCOUNT_CLOSURE_REQUESTED", "계좌 해지 신청"),
+                    Map.entry("ACCOUNT_CLOSURE_APPROVED", "계좌 해지 승인"),
+                    Map.entry("ACCOUNT_CLOSURE_REJECTED", "계좌 해지 반려"),
                     Map.entry("SETTLEMENT_BATCH_REQUESTED", "정산 배치 실행 요청"),
                     Map.entry("SETTLEMENT_BATCH_RETRIED", "정산 배치 재처리"),
                     Map.entry("SETTLEMENT_ITEM_RETRIED", "정산 항목 재처리"));

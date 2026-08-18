@@ -96,6 +96,22 @@ class AuditLogServiceImplTest {
     }
 
     @Test
+    @DisplayName("계좌 해지 한글 사유를 감사로그 사유코드로 변환한다")
+    void searchAuditLogsResolvesAccountClosureReasonLabel() {
+        AuditLogSearchRequestDTO request =
+                AuditLogSearchRequestDTO.builder().reasonKeyword("계좌 해지 반려").build();
+        when(auditLogMapper.selectAuditLogs(any())).thenReturn(List.of());
+        when(auditLogMapper.countAuditLogs(any())).thenReturn(0L);
+
+        auditLogService.searchAuditLogs(request);
+
+        ArgumentCaptor<AuditLogSearchDTO> captor = ArgumentCaptor.forClass(AuditLogSearchDTO.class);
+        verify(auditLogMapper).selectAuditLogs(captor.capture());
+        assertThat(captor.getValue().getMatchedReasonCodes())
+                .containsExactly("ACCOUNT_CLOSURE_REJECTED");
+    }
+
+    @Test
     @DisplayName("knownReasonCodes는 reasonKeyword가 비어있어도 항상 전체 사유코드 목록으로 채워진다")
     void searchAuditLogsAlwaysPassesFullKnownReasonCodesRegardlessOfKeyword() {
         AuditLogSearchRequestDTO request = AuditLogSearchRequestDTO.builder().build();

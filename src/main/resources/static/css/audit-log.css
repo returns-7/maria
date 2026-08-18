@@ -177,11 +177,6 @@
     font: 500 12px 'Noto Sans KR', sans-serif;
 }
 
-.audit-log-pagination .btn:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-}
-
 @media (max-width: 620px) {
     .audit-log-header,
     .audit-log-filter-row {

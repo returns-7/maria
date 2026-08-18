@@ -3,6 +3,7 @@ package com.app.maria.domain.sellorder.mapper;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.app.maria.domain.sellorder.dto.SellOrderDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO;
 import com.app.maria.domain.sellorder.type.SellOrderStatus;
 import java.io.IOException;
 import java.io.Reader;
@@ -316,6 +317,243 @@ class SellOrderMapperTest {
         assertThat(result).isEmpty();
     }
 
+    // ---- selectSellOrderHistory / countSellOrderHistory ----
+
+    @Test
+    @DisplayName("계좌/고객/종목/가환전 정보까지 조인해서 필드를 전부 정확히 채워 반환한다")
+    void selectSellOrderHistoryReturnsAllJoinedFieldsCorrectly() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertAccount(1L, 1L, "1234567890");
+        insertForeignProduct(10L, "AAPL", "Apple Inc.");
+        SellOrderDTO order =
+                newSellOrder(1L, 10L, null, "20", "150.25", SellOrderStatus.EXECUTED, "1325.10");
+        sellOrderMapper.insertSellOrder(order);
+        insertKrwExchange(order.getOrderId(), "2970000", "2970000");
+
+        List<SellOrderHistoryDTO> result =
+                sellOrderMapper.selectSellOrderHistory(null, null, null, null, 0, 10);
+
+        assertThat(result).hasSize(1);
+        SellOrderHistoryDTO found = result.get(0);
+        assertThat(found.getAccountNo()).isEqualTo("1234567890");
+        assertThat(found.getCustomerName()).isEqualTo("홍길동");
+        assertThat(found.getTicker()).isEqualTo("AAPL");
+        assertThat(found.getName()).isEqualTo("Apple Inc.");
+        assertThat(found.getSellQty()).isEqualByComparingTo("20");
+        assertThat(found.getBasePrice()).isEqualByComparingTo("150.25");
+        assertThat(found.getProcessedAt()).isEqualTo(LocalDateTime.of(2026, 8, 6, 10, 0));
+        assertThat(found.getProvisionalAmount()).isEqualByComparingTo("2970000");
+        assertThat(found.getFinalAmount()).isEqualByComparingTo("2970000");
+        assertThat(found.getStatus()).isEqualTo("EXECUTED");
+    }
+
+    @Test
+    @DisplayName("가환전 정보가 없는 매도 주문도 목록에 포함되고 가환전/확정 금액은 null로 나온다 (LEFT JOIN)")
+    void selectSellOrderHistoryIncludesOrdersWithoutKrwExchange() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertAccount(1L, 1L, "1234567890");
+        insertForeignProduct(10L, "AAPL", "Apple Inc.");
+        SellOrderDTO order =
+                newSellOrder(1L, 10L, null, "5", "100", SellOrderStatus.REJECTED, null);
+        sellOrderMapper.insertSellOrder(order);
+
+        List<SellOrderHistoryDTO> result =
+                sellOrderMapper.selectSellOrderHistory(null, null, null, null, 0, 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getProvisionalAmount()).isNull();
+        assertThat(result.get(0).getFinalAmount()).isNull();
+        assertThat(result.get(0).getStatus()).isEqualTo("REJECTED");
+    }
+
+    @Test
+    @DisplayName("keyword가 계좌번호에 부분일치하면 그 계좌의 매도내역만 반환한다")
+    void selectSellOrderHistoryFiltersByKeywordMatchingAccountNo() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertCustomer(2L, "김철수");
+        insertAccount(1L, 1L, "1111111111");
+        insertAccount(2L, 2L, "2222222222");
+        insertForeignProduct(10L, "AAPL", "Apple Inc.");
+        sellOrderMapper.insertSellOrder(
+                newSellOrder(1L, 10L, null, "1", "10", SellOrderStatus.EXECUTED, "1000"));
+        sellOrderMapper.insertSellOrder(
+                newSellOrder(2L, 10L, null, "1", "10", SellOrderStatus.EXECUTED, "1000"));
+
+        List<SellOrderHistoryDTO> result =
+                sellOrderMapper.selectSellOrderHistory("1111", null, null, null, 0, 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getAccountNo()).isEqualTo("1111111111");
+    }
+
+    @Test
+    @DisplayName("keyword가 고객명에 부분일치하면 그 고객의 매도내역만 반환한다 (계좌번호/고객명 통합검색, OR 조건)")
+    void selectSellOrderHistoryFiltersByKeywordMatchingCustomerName() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertCustomer(2L, "김철수");
+        insertAccount(1L, 1L, "1111111111");
+        insertAccount(2L, 2L, "2222222222");
+        insertForeignProduct(10L, "AAPL", "Apple Inc.");
+        sellOrderMapper.insertSellOrder(
+                newSellOrder(1L, 10L, null, "1", "10", SellOrderStatus.EXECUTED, "1000"));
+        sellOrderMapper.insertSellOrder(
+                newSellOrder(2L, 10L, null, "1", "10", SellOrderStatus.EXECUTED, "1000"));
+
+        List<SellOrderHistoryDTO> result =
+                sellOrderMapper.selectSellOrderHistory("홍길동", null, null, null, 0, 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getCustomerName()).isEqualTo("홍길동");
+    }
+
+    @Test
+    @DisplayName("status로 필터링하면 그 상태의 매도내역만 반환한다")
+    void selectSellOrderHistoryFiltersByStatus() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertAccount(1L, 1L, "1111111111");
+        insertForeignProduct(10L, "AAPL", "Apple Inc.");
+        sellOrderMapper.insertSellOrder(
+                newSellOrder(1L, 10L, null, "1", "10", SellOrderStatus.EXECUTED, "1000"));
+        sellOrderMapper.insertSellOrder(
+                newSellOrder(1L, 10L, null, "1", "10", SellOrderStatus.REJECTED, null));
+
+        List<SellOrderHistoryDTO> result =
+                sellOrderMapper.selectSellOrderHistory(null, "REJECTED", null, null, 0, 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getStatus()).isEqualTo("REJECTED");
+    }
+
+    @Test
+    @DisplayName("startDate·endDate로 필터링하면 그 구간의 매도시각인 내역만 반환한다")
+    void selectSellOrderHistoryFiltersByDateRange() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertAccount(1L, 1L, "1111111111");
+        insertForeignProduct(10L, "AAPL", "Apple Inc.");
+        SellOrderDTO inRange =
+                SellOrderDTO.builder()
+                        .accountId(1L)
+                        .foreignProductId(10L)
+                        .sellQty(new BigDecimal("1"))
+                        .basePrice(new BigDecimal("10"))
+                        .status(SellOrderStatus.EXECUTED)
+                        .processedAt(LocalDateTime.of(2026, 8, 5, 9, 0))
+                        .build();
+        SellOrderDTO outOfRange =
+                SellOrderDTO.builder()
+                        .accountId(1L)
+                        .foreignProductId(10L)
+                        .sellQty(new BigDecimal("2"))
+                        .basePrice(new BigDecimal("20"))
+                        .status(SellOrderStatus.EXECUTED)
+                        .processedAt(LocalDateTime.of(2026, 8, 20, 9, 0))
+                        .build();
+        sellOrderMapper.insertSellOrder(inRange);
+        sellOrderMapper.insertSellOrder(outOfRange);
+
+        List<SellOrderHistoryDTO> result =
+                sellOrderMapper.selectSellOrderHistory(
+                        null,
+                        null,
+                        LocalDateTime.of(2026, 8, 1, 0, 0),
+                        LocalDateTime.of(2026, 8, 10, 23, 59, 59),
+                        0,
+                        10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getSellQty()).isEqualByComparingTo("1");
+    }
+
+    @Test
+    @DisplayName("매도시각(processed_at) 최신순으로 정렬해서 반환한다")
+    void selectSellOrderHistoryOrdersByProcessedAtDescending() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertAccount(1L, 1L, "1111111111");
+        insertForeignProduct(10L, "AAPL", "Apple Inc.");
+        SellOrderDTO older =
+                SellOrderDTO.builder()
+                        .accountId(1L)
+                        .foreignProductId(10L)
+                        .sellQty(new BigDecimal("1"))
+                        .basePrice(new BigDecimal("10"))
+                        .status(SellOrderStatus.EXECUTED)
+                        .processedAt(LocalDateTime.of(2026, 8, 1, 9, 0))
+                        .build();
+        SellOrderDTO newer =
+                SellOrderDTO.builder()
+                        .accountId(1L)
+                        .foreignProductId(10L)
+                        .sellQty(new BigDecimal("2"))
+                        .basePrice(new BigDecimal("20"))
+                        .status(SellOrderStatus.EXECUTED)
+                        .processedAt(LocalDateTime.of(2026, 8, 10, 9, 0))
+                        .build();
+        sellOrderMapper.insertSellOrder(older);
+        sellOrderMapper.insertSellOrder(newer);
+
+        List<SellOrderHistoryDTO> result =
+                sellOrderMapper.selectSellOrderHistory(null, null, null, null, 0, 10);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).getSellQty()).isEqualByComparingTo("2");
+        assertThat(result.get(1).getSellQty()).isEqualByComparingTo("1");
+    }
+
+    @Test
+    @DisplayName("offset·size로 페이지네이션이 적용된다")
+    void selectSellOrderHistoryAppliesOffsetAndSizeForPagination() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertAccount(1L, 1L, "1111111111");
+        insertForeignProduct(10L, "AAPL", "Apple Inc.");
+        for (int i = 0; i < 3; i++) {
+            sellOrderMapper.insertSellOrder(
+                    newSellOrder(1L, 10L, null, "1", "10", SellOrderStatus.EXECUTED, "1000"));
+        }
+
+        List<SellOrderHistoryDTO> firstPage =
+                sellOrderMapper.selectSellOrderHistory(null, null, null, null, 0, 2);
+        List<SellOrderHistoryDTO> secondPage =
+                sellOrderMapper.selectSellOrderHistory(null, null, null, null, 2, 2);
+
+        assertThat(firstPage).hasSize(2);
+        assertThat(secondPage).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("매도내역이 없으면 빈 목록을 반환한다")
+    void selectSellOrderHistoryReturnsEmptyListWhenNoOrdersExist() {
+        List<SellOrderHistoryDTO> result =
+                sellOrderMapper.selectSellOrderHistory(null, null, null, null, 0, 10);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("countSellOrderHistory는 필터가 적용된 매도내역 건수를 반환한다")
+    void countSellOrderHistoryMatchesFilteredRowCount() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertCustomer(2L, "김철수");
+        insertAccount(1L, 1L, "1111111111");
+        insertAccount(2L, 2L, "2222222222");
+        insertForeignProduct(10L, "AAPL", "Apple Inc.");
+        sellOrderMapper.insertSellOrder(
+                newSellOrder(1L, 10L, null, "1", "10", SellOrderStatus.EXECUTED, "1000"));
+        sellOrderMapper.insertSellOrder(
+                newSellOrder(2L, 10L, null, "1", "10", SellOrderStatus.EXECUTED, "1000"));
+
+        int count = sellOrderMapper.countSellOrderHistory("1111", null, null, null);
+
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("countSellOrderHistory는 매도내역이 없으면 0을 반환한다")
+    void countSellOrderHistoryReturnsZeroWhenNoOrdersExist() {
+        int count = sellOrderMapper.countSellOrderHistory(null, null, null, null);
+
+        assertThat(count).isZero();
+    }
+
     private SellOrderDTO newSellOrder(
             Long accountId,
             Long foreignProductId,
@@ -416,6 +654,78 @@ class SellOrderMapperTest {
                         settlement_fx_rate DECIMAL(15,4) NULL
                     )
                     """);
+            statement.execute(
+                    """
+                    CREATE TABLE customer (
+                        customer_id BIGINT PRIMARY KEY,
+                        name VARCHAR(50) NOT NULL
+                    )
+                    """);
+            statement.execute(
+                    """
+                    CREATE TABLE account (
+                        account_id BIGINT PRIMARY KEY,
+                        customer_id BIGINT NOT NULL,
+                        account_no VARCHAR(10)
+                    )
+                    """);
+            statement.execute(
+                    """
+                    CREATE TABLE foreign_product (
+                        foreign_product_id BIGINT PRIMARY KEY,
+                        ticker VARCHAR(20) NOT NULL,
+                        name VARCHAR(100) NOT NULL
+                    )
+                    """);
+            statement.execute(
+                    """
+                    CREATE TABLE krw_exchange (
+                        exchange_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                        order_id BIGINT NOT NULL,
+                        provisional_amount DECIMAL(15,2) NOT NULL,
+                        final_amount DECIMAL(15,0) NULL
+                    )
+                    """);
+        }
+    }
+
+    private void insertCustomer(Long customerId, String name) throws SQLException {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            statement.execute(
+                    "INSERT INTO customer (customer_id, name) VALUES (%d, '%s')"
+                            .formatted(customerId, name));
+        }
+    }
+
+    private void insertAccount(Long accountId, Long customerId, String accountNo)
+            throws SQLException {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            statement.execute(
+                    "INSERT INTO account (account_id, customer_id, account_no) VALUES (%d, %d, '%s')"
+                            .formatted(accountId, customerId, accountNo));
+        }
+    }
+
+    private void insertForeignProduct(Long foreignProductId, String ticker, String name)
+            throws SQLException {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            statement.execute(
+                    "INSERT INTO foreign_product (foreign_product_id, ticker, name) VALUES (%d, '%s', '%s')"
+                            .formatted(foreignProductId, ticker, name));
+        }
+    }
+
+    private void insertKrwExchange(Long orderId, String provisionalAmount, String finalAmount)
+            throws SQLException {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            String finalAmountValue = finalAmount == null ? "NULL" : finalAmount;
+            statement.execute(
+                    "INSERT INTO krw_exchange (order_id, provisional_amount, final_amount) VALUES (%d, %s, %s)"
+                            .formatted(orderId, provisionalAmount, finalAmountValue));
         }
     }
 }

@@ -6,8 +6,13 @@
 <mapper namespace="com.app.maria.global.audit.mapper.AuditLogMapper">
 
     <insert id="insertLog">
-    INSERT INTO audit_log(admin_id, target_table, target_pk, before_value, after_value, reason_code)
-    VALUES(#{adminId}, #{targetTable}, #{targetPk}, #{beforeValue}, #{afterValue}, #{reasonCode})
+    INSERT INTO audit_log(
+        admin_id, target_table, target_pk, before_value, after_value, reason_code, processed_at
+    )
+    VALUES(
+        #{adminId}, #{targetTable}, #{targetPk}, #{beforeValue}, #{afterValue}, #{reasonCode},
+        COALESCE(#{processedAt}, CURRENT_TIMESTAMP)
+    )
     </insert>
 
     <sql id="auditLogSearchCondition">

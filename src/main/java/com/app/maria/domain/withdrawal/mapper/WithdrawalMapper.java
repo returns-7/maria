@@ -2,10 +2,13 @@ package com.app.maria.domain.withdrawal.mapper;
 
 import com.app.maria.domain.withdrawal.dto.LeftAmountDTO;
 import com.app.maria.domain.withdrawal.dto.WithdrawalAllocationDTO;
+import com.app.maria.domain.withdrawal.dto.WithdrawalAllocationHistoryDTO;
 import com.app.maria.domain.withdrawal.dto.WithdrawalDTO;
+import com.app.maria.domain.withdrawal.dto.WithdrawalHistoryDTO;
 import com.app.maria.domain.withdrawal.type.WithdrawalStatus;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -35,4 +38,15 @@ public interface WithdrawalMapper {
 
     // 계좌 상태 검증
     public List<LeftAmountDTO> selectAvailableLeftAmountsByAccountId(Long accountId);
+
+    // 완료된 인출에서 실제 배분된 미경과 원금 합계 조회
+    BigDecimal selectImmatureAllocatedAmountByWithdrawalId(Long withdrawalId);
+
+    List<WithdrawalHistoryDTO> selectWithdrawalHistories(@Param("status") WithdrawalStatus status);
+
+    List<WithdrawalHistoryDTO> selectWithdrawalHistoriesByAccountId(Long accountId);
+
+    Optional<WithdrawalHistoryDTO> selectWithdrawalHistoryById(Long withdrawalId);
+
+    List<WithdrawalAllocationHistoryDTO> selectAllocationHistoriesByWithdrawalId(Long withdrawalId);
 }

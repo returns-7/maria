@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO;
 import com.app.maria.domain.sellorder.dto.request.SellOrderRequestDTO;
 import com.app.maria.domain.sellorder.dto.response.SellOrderResponseDTO;
 import com.app.maria.domain.sellorder.exception.SellOrderException;
@@ -16,8 +17,10 @@ import com.app.maria.domain.sellorder.type.SellOrderStatus;
 import com.app.maria.global.config.SecurityConfig;
 import com.app.maria.global.exception.UnsupportedExchangeException;
 import com.app.maria.global.jwt.JwtTokenProvider;
+import com.app.maria.global.response.PageResponseDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -355,5 +358,105 @@ class SellOrderApiTest {
                 .andExpect(status().isUnauthorized());
 
         verify(sellOrderService, never()).getSellOrderByAccount(any());
+    }
+
+    @Test
+    @DisplayName("전체 매도·환전 내역을 조회하면 200과 목록/건수를 반환한다")
+    @WithMockUser(roles = "VIEWER")
+    void getSellOrderHistoryReturns200WithPageContent() throws Exception {
+        SellOrderHistoryDTO history =
+                SellOrderHistoryDTO.builder()
+                        .accountNo("1000000001")
+                        .customerName("홍길동")
+                        .ticker("AAPL")
+                        .name("Apple Inc.")
+                        .status("EXECUTED")
+                        .build();
+        PageResponseDTO<SellOrderHistoryDTO> page = PageResponseDTO.of(List.of(history), 1, 0, 20);
+        when(sellOrderService.getSellOrderHistory(null, null, null, null, 0, 20)).thenReturn(page);
+
+        mockMvc.perform(get("/api/sell-orders/history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("매도 · 환전 내역 조회 성공"))
+                .andExpect(jsonPath("$.data.content[0].accountNo").value("1000000001"))
+                .andExpect(jsonPath("$.data.content[0].customerName").value("홍길동"))
+                .andExpect(jsonPath("$.data.totalCount").value(1));
+    }
+
+    @Test
+    @DisplayName("keyword/상태/날짜범위/페이지 파라미터를 그대로 서비스에 전달한다")
+    @WithMockUser(roles = "VIEWER")
+    void getSellOrderHistoryPassesQueryParamsToService() throws Exception {
+        when(sellOrderService.getSellOrderHistory(
+                        "1234567890",
+                        SellOrderStatus.EXECUTED,
+                        LocalDate.of(2026, 8, 1),
+                        LocalDate.of(2026, 8, 10),
+                        2,
+                        10))
+                .thenReturn(PageResponseDTO.of(List.of(), 0, 2, 10));
+
+        mockMvc.perform(
+                        get("/api/sell-orders/history")
+                                .param("keyword", "1234567890")
+                                .param("status", "EXECUTED")
+                                .param("startDate", "2026-08-01")
+                                .param("endDate", "2026-08-10")
+                                .param("page", "2")
+                                .param("size", "10"))
+                .andExpect(status().isOk());
+
+        verify(sellOrderService)
+                .getSellOrderHistory(
+                        "1234567890",
+                        SellOrderStatus.EXECUTED,
+                        LocalDate.of(2026, 8, 1),
+                        LocalDate.of(2026, 8, 10),
+                        2,
+                        10);
+    }
+
+    @Test
+    @DisplayName("매도·환전 내역이 없으면 빈 목록을 반환한다")
+    @WithMockUser(roles = "VIEWER")
+    void getSellOrderHistoryReturns200WithEmptyContentWhenNoOrdersExist() throws Exception {
+        when(sellOrderService.getSellOrderHistory(null, null, null, null, 0, 20))
+                .thenReturn(PageResponseDTO.of(List.of(), 0, 0, 20));
+
+        mockMvc.perform(get("/api/sell-orders/history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").isEmpty())
+                .andExpect(jsonPath("$.data.totalCount").value(0));
+    }
+
+    @Test
+    @DisplayName("page가 음수면 검증 실패로 400을 반환하고 서비스는 호출되지 않는다")
+    @WithMockUser(roles = "VIEWER")
+    void getSellOrderHistoryReturns400WhenPageIsNegative() throws Exception {
+        mockMvc.perform(get("/api/sell-orders/history").param("page", "-1"))
+                .andExpect(status().isBadRequest());
+
+        verify(sellOrderService, never())
+                .getSellOrderHistory(any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    @DisplayName("size가 0 이하면 검증 실패로 400을 반환하고 서비스는 호출되지 않는다")
+    @WithMockUser(roles = "VIEWER")
+    void getSellOrderHistoryReturns400WhenSizeIsNotPositive() throws Exception {
+        mockMvc.perform(get("/api/sell-orders/history").param("size", "0"))
+                .andExpect(status().isBadRequest());
+
+        verify(sellOrderService, never())
+                .getSellOrderHistory(any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    @DisplayName("전체 매도·환전 내역 조회 시 인증되지 않은 요청이면 401을 반환한다")
+    void getSellOrderHistoryReturns401WhenNotAuthenticated() throws Exception {
+        mockMvc.perform(get("/api/sell-orders/history")).andExpect(status().isUnauthorized());
+
+        verify(sellOrderService, never())
+                .getSellOrderHistory(any(), any(), any(), any(), anyInt(), anyInt());
     }
 }

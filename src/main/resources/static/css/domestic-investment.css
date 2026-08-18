@@ -1,0 +1,76 @@
+.di-layout {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+}
+
+.di-list-card {
+    width: 380px;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.di-detail-card {
+    flex: 1;
+    min-width: 0;
+}
+
+.di-filter-bar {
+    padding: 0 14px 12px;
+}
+
+.di-list-items {
+    display: flex;
+    flex-direction: column;
+}
+
+.di-list-item {
+    padding: 12px 14px;
+    border-top: 1px solid var(--cardBorder);
+    border-left: 3px solid transparent;
+    background: var(--cardBg);
+    cursor: pointer;
+}
+
+.di-list-items .di-list-item:first-child {
+    border-top: none;
+}
+
+.di-list-item:hover {
+    background: var(--tableHeaderBg);
+}
+
+.di-list-item.selected {
+    background: var(--accentBg);
+    border-left-color: var(--accent);
+}
+
+.di-list-item-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font: 700 13px 'Noto Sans KR', sans-serif;
+    color: var(--textPrimary);
+    margin-bottom: 6px;
+}
+
+.di-list-item-bottom {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font: 500 11px 'Noto Sans KR', sans-serif;
+    color: var(--textMuted);
+    font-variant-numeric: tabular-nums;
+}
+
+.di-trade-history {
+    margin: 0 14px 14px;
+    padding-left: 16px;
+    font: 500 12px 'Noto Sans KR', sans-serif;
+    color: var(--textSecondary);
+}
+
+.di-trade-history li {
+    margin-bottom: 4px;
+}

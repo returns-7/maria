@@ -88,6 +88,22 @@ class AuditLogMapperTest {
     }
 
     @Test
+    @DisplayName("지정한 업무시각으로 감사로그를 저장한다")
+    void insertLogStoresProvidedProcessedAt() {
+        LocalDateTime businessTime = LocalDateTime.of(2026, 8, 12, 10, 30);
+        AuditLogDTO auditLog = auditLog(1L, "ACCOUNT", "100", "ACCOUNT_CLOSURE_APPROVED");
+        auditLog.setProcessedAt(businessTime);
+
+        auditLogMapper.insertLog(auditLog);
+
+        List<AuditLogDTO> result = auditLogMapper.selectAuditLogs(searchDefaults().build());
+        assertThat(result)
+                .singleElement()
+                .extracting(AuditLogDTO::getProcessedAt)
+                .isEqualTo(businessTime);
+    }
+
+    @Test
     @DisplayName("검색조건이 전부 비어 있으면 전체 목록을 최신순으로 반환한다")
     void selectAuditLogsReturnsAllOrderedByProcessedAtDescWhenNoFilters() throws SQLException {
         insertLogAt(1L, "ADMIN_USER", "2", "ADMIN_ROLE_UPDATE", "2026-08-01 09:00:00");

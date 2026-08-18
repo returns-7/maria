@@ -10,6 +10,7 @@
 
     <typeAliases>
         <typeAlias alias="SellOrderDTO" type="com.app.maria.domain.sellorder.dto.SellOrderDTO"/>
+        <typeAlias alias="SellOrderHistoryDTO" type="com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO"/>
     </typeAliases>
 
     <environments default="sellorder-mapper-test">

@@ -2,6 +2,7 @@ package com.app.maria.domain.accountclosure.api;
 
 import com.app.maria.domain.account.dto.request.ReasonRequestDTO;
 import com.app.maria.domain.accountclosure.dto.request.AccountClosureApplyRequestDTO;
+import com.app.maria.domain.accountclosure.dto.response.AccountClosureDetailResponseDTO;
 import com.app.maria.domain.accountclosure.dto.response.AccountClosureResponseDTO;
 import com.app.maria.domain.accountclosure.service.AccountClosureService;
 import com.app.maria.domain.accountclosure.type.AccountClosureStatus;
@@ -65,9 +66,10 @@ public class AccountClosureApi {
 
     @GetMapping("/{closureRequestId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'REVIEWER')")
-    public ResponseEntity<ApiResponseDTO<AccountClosureResponseDTO>> getClosure(
+    public ResponseEntity<ApiResponseDTO<AccountClosureDetailResponseDTO>> getClosure(
             @PathVariable @Positive(message = "해지 신청 ID는 0보다 커야 합니다.") Long closureRequestId) {
-        AccountClosureResponseDTO closure = accountClosureService.getClosure(closureRequestId);
+        AccountClosureDetailResponseDTO closure =
+                accountClosureService.getClosure(closureRequestId);
         return ResponseEntity.ok(ApiResponseDTO.of("계좌 해지 신청 상세 조회 완료", closure));
     }
 }

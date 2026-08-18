@@ -164,4 +164,39 @@ class DomesticPurchaseEligibilityServiceImplTest {
 
         verifyNoInteractions(businessClockService);
     }
+
+    @Test
+    @DisplayName("(오버로드) STOCK은 이미 알고 있는 값만으로 판정하고 mapper를 조회하지 않는다")
+    void isPurchasableWithKnownValuesReturnsTrueForStockWithoutQueryingMapper() {
+        boolean result = domesticPurchaseEligibilityService.isPurchasable(Type.STOCK, null, null);
+
+        assertThat(result).isTrue();
+        verifyNoInteractions(domesticProductMapper);
+    }
+
+    @Test
+    @DisplayName("(오버로드) FUND는 이미 알고 있는 비중·설정일 값만으로 판정하고 mapper를 조회하지 않는다")
+    void isPurchasableWithKnownValuesReturnsTrueForFundWhenBothConditionsMet() {
+        when(businessClockService.now()).thenReturn(TODAY.atStartOfDay());
+
+        boolean result =
+                domesticPurchaseEligibilityService.isPurchasable(
+                        Type.FUND, BigDecimal.valueOf(85.00), TODAY.minusMonths(2));
+
+        assertThat(result).isTrue();
+        verifyNoInteractions(domesticProductMapper);
+    }
+
+    @Test
+    @DisplayName("(오버로드) FUND의 국내주식비중이 80% 미만이면 매수 불가하다")
+    void isPurchasableWithKnownValuesReturnsFalseWhenRatioBelowThreshold() {
+        when(businessClockService.now()).thenReturn(TODAY.atStartOfDay());
+
+        boolean result =
+                domesticPurchaseEligibilityService.isPurchasable(
+                        Type.FUND, BigDecimal.valueOf(79.99), TODAY.minusMonths(2));
+
+        assertThat(result).isFalse();
+        verifyNoInteractions(domesticProductMapper);
+    }
 }

@@ -3,8 +3,8 @@
       xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
       layout:decorate="~{layout/main}">
 <head>
-    <title>감사 로그 - MARIA</title>
     <th:block layout:fragment="pageStyles">
+        <link rel="stylesheet" th:href="@{/css/dashboard.css}">
         <link rel="stylesheet" th:href="@{/css/audit-log.css}">
     </th:block>
 </head>
@@ -66,11 +66,7 @@
             </tbody>
         </table>
     </div>
-    <div class="audit-log-pagination" id="auditLogPagination" style="display:none">
-        <button id="previousAuditLogPage" class="btn" type="button">이전</button>
-        <span id="auditLogPageInfo"></span>
-        <button id="nextAuditLogPage" class="btn" type="button">다음</button>
-    </div>
+    <div class="audit-log-pagination" id="auditLogPagination"></div>
 </div>
 
 <th:block layout:fragment="pageScripts">

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <meta charset="UTF-8">
+    <th:block layout:fragment="pageStyles">
+        <link rel="stylesheet" th:href="@{/css/account-closures.css}">
+    </th:block>
+</head>
+<body>
+<div layout:fragment="breadcrumb">계좌 해지 관리</div>
+
+<div layout:fragment="content" class="account-closures">
+    <div class="closure-page-header">
+        <div>
+            <h1>계좌 해지 관리</h1>
+            <p>해지 신청을 검토하고 강제인출 동의 여부를 확인한 뒤 승인 또는 반려합니다.</p>
+        </div>
+        <span class="closure-policy-badge">잔고 0원 확인 · 조기인출 혜택 취소 연동</span>
+    </div>
+
+    <div class="closure-filter">
+        <label for="closure-status">처리 상태</label>
+        <select id="closure-status">
+            <option value="REQUESTED">해지 신청</option>
+            <option value="COMPLETED">해지 완료</option>
+            <option value="REJECTED">반려</option>
+        </select>
+        <button type="button" id="search-button">조회</button>
+    </div>
+
+    <div class="closure-workspace">
+        <section class="closure-list-card">
+            <div class="closure-card-header">
+                <h2>해지 신청 목록</h2>
+                <span id="closure-count">총 0건</span>
+            </div>
+            <div id="closure-list" class="closure-list">
+                <div class="closure-empty">해지 신청 내역을 조회하고 있습니다.</div>
+            </div>
+            <div id="closure-pagination" class="closure-pagination" hidden>
+                <button type="button" id="previous-closure-page">이전</button>
+                <span id="closure-page-info"></span>
+                <button type="button" id="next-closure-page">다음</button>
+            </div>
+        </section>
+
+        <section id="closure-detail" class="closure-detail-card is-empty">
+            <div id="closure-detail-empty" class="closure-detail-empty">
+                왼쪽 목록에서 해지 신청을 선택해 주세요.
+            </div>
+
+            <div id="closure-detail-content" class="closure-detail-content" hidden>
+                <div class="closure-card-header">
+                    <div>
+                        <span class="closure-section-label">신청 상세</span>
+                        <h2 id="detail-request-title">해지 신청</h2>
+                    </div>
+                    <span id="detail-status" class="closure-status-badge"></span>
+                </div>
+
+                <dl class="closure-detail-grid">
+                    <div><dt>고객명</dt><dd id="detail-customer-name">-</dd></div>
+                    <div><dt>RIA 계좌번호</dt><dd id="detail-account-no">-</dd></div>
+                    <div><dt>현재 계좌 잔액</dt><dd id="detail-account-amount">-</dd></div>
+                    <div><dt>인출 목적지 일반계좌</dt><dd id="detail-destination-id">-</dd></div>
+                    <div><dt>신청 시각</dt><dd id="detail-requested-at">-</dd></div>
+                    <div><dt>조기인출 동의</dt><dd id="detail-early-agreed">-</dd></div>
+                    <div><dt id="detail-immature-label">실제 미경과 원금</dt><dd id="detail-immature-principal">-</dd></div>
+                    <div><dt id="detail-tax-label">세제혜택 영향</dt><dd id="detail-tax-impact">-</dd></div>
+                </dl>
+
+                <div id="early-withdrawal-warning" class="closure-warning" hidden>
+                    <strong>승인 시 세제혜택이 전체 취소됩니다.</strong>
+                    <p>현재 잔액에 1년 미경과 원금이 포함되어 강제인출 시 조기인출로 처리됩니다.</p>
+                </div>
+
+                <div id="early-withdrawal-not-agreed" class="closure-notice" hidden>
+                    실제 미경과 원금이 없어 승인 시 세제혜택 취소가 발생하지 않습니다.
+                </div>
+
+                <div id="closure-actions" class="closure-actions">
+                    <label for="rejection-reason">반려 사유</label>
+                    <textarea id="rejection-reason" rows="3"
+                              placeholder="반려할 경우 사유를 입력해 주세요."></textarea>
+                    <div class="closure-action-buttons">
+                        <button type="button" id="approve-button" class="closure-approve-button">해지 승인</button>
+                        <button type="button" id="reject-button" class="closure-reject-button">해지 반려</button>
+                    </div>
+                </div>
+
+                <div id="closure-readonly-notice" class="closure-notice" hidden>
+                    처리 완료된 신청이거나 승인·반려 권한이 없어 조회만 가능합니다.
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<th:block layout:fragment="pageScripts">
+    <script th:src="@{/js/account-closures.js}"></script>
+</th:block>
+</body>
+</html>

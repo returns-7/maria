@@ -27,25 +27,29 @@ public class DomesticPurchaseEligibilityServiceImpl implements DomesticPurchaseE
                         .selectById(domesticProductId)
                         .orElseThrow(
                                 () -> new DomesticProductNotFoundException("종목 정보를 찾을 수 없습니다."));
-
-        if (product.getType() == Type.STOCK) {
-            return true;
-        }
-
-        LocalDate today = businessClockService.now().toLocalDate();
-        return isDomesticStockRatioMet(product) && isInceptionPeriodMet(product, today);
+        return isPurchasable(
+                product.getType(), product.getDomesticStockRatio(), product.getInceptionDate());
     }
 
-    private boolean isDomesticStockRatioMet(DomesticProductDTO product) {
-        return product.getDomesticStockRatio() != null
-                && product.getDomesticStockRatio()
-                                .compareTo(BigDecimal.valueOf(DOMESTIC_STOCK_RATIO_THRESHOLD))
+    @Override
+    public boolean isPurchasable(
+            Type type, BigDecimal domesticStockRatio, LocalDate inceptionDate) {
+        if (type == Type.STOCK) {
+            return true;
+        }
+        LocalDate today = businessClockService.now().toLocalDate();
+        return isDomesticStockRatioMet(domesticStockRatio)
+                && isInceptionPeriodMet(inceptionDate, today);
+    }
+
+    private boolean isDomesticStockRatioMet(BigDecimal domesticStockRatio) {
+        return domesticStockRatio != null
+                && domesticStockRatio.compareTo(BigDecimal.valueOf(DOMESTIC_STOCK_RATIO_THRESHOLD))
                         >= 0;
     }
 
-    private boolean isInceptionPeriodMet(DomesticProductDTO product, LocalDate today) {
-        return product.getInceptionDate() != null
-                && !product.getInceptionDate()
-                        .isAfter(today.minusMonths(INCEPTION_GRACE_PERIOD_MONTHS));
+    private boolean isInceptionPeriodMet(LocalDate inceptionDate, LocalDate today) {
+        return inceptionDate != null
+                && !inceptionDate.isAfter(today.minusMonths(INCEPTION_GRACE_PERIOD_MONTHS));
     }
 }

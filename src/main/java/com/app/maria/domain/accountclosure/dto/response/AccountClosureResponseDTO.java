@@ -12,18 +12,16 @@ import lombok.*;
 @Builder
 public class AccountClosureResponseDTO {
     private Long closureRequestId;
-    private Long accountId;
-    private Long destinationGeneralAccountId;
-    private boolean earlyWithdrawalAgreed;
+    private String customerName;
+    private String accountNo;
     private AccountClosureStatus status;
     private LocalDateTime requestedAt;
 
     public static AccountClosureResponseDTO from(AccountClosureDTO closure) {
         return AccountClosureResponseDTO.builder()
                 .closureRequestId(closure.getClosureRequestId())
-                .accountId(closure.getAccountId())
-                .destinationGeneralAccountId(closure.getDestinationGeneralAccountId())
-                .earlyWithdrawalAgreed(closure.isEarlyWithdrawalAgreed())
+                .customerName(closure.getCustomerName())
+                .accountNo(closure.getAccountNo())
                 .status(closure.getStatus())
                 .requestedAt(closure.getRequestedAt())
                 .build();

@@ -6,6 +6,7 @@ import com.app.maria.domain.foreignproduct.mapper.ForeignProductMapper;
 import com.app.maria.domain.inbound.dto.InboundDetailDTO;
 import com.app.maria.domain.inbound.mapper.InboundMapper;
 import com.app.maria.domain.sellorder.dto.SellOrderDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO;
 import com.app.maria.domain.sellorder.dto.request.SellOrderRequestDTO;
 import com.app.maria.domain.sellorder.dto.response.SellOrderResponseDTO;
 import com.app.maria.domain.sellorder.exception.SellOrderException;
@@ -19,7 +20,9 @@ import com.app.maria.global.client.exchange.ExchangeRateClient;
 import com.app.maria.global.client.kis.KisExchangeCode;
 import com.app.maria.global.client.kis.KisPriceClient;
 import com.app.maria.global.clock.service.BusinessClockService;
+import com.app.maria.global.response.PageResponseDTO;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -179,5 +182,28 @@ public class SellOrderServiceImpl implements SellOrderService {
         LocalDateTime start = businessClockService.now().toLocalDate().atStartOfDay();
         LocalDateTime end = start.plusDays(1);
         return sellOrderMapper.sumSellAmountBetween(start, end);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponseDTO<SellOrderHistoryDTO> getSellOrderHistory(
+            String keyword,
+            SellOrderStatus status,
+            LocalDate startDate,
+            LocalDate endDate,
+            int page,
+            int size) {
+        int offset = page * size;
+        String statusName = status == null ? null : status.name();
+        LocalDateTime startDateTime = startDate == null ? null : startDate.atStartOfDay();
+        LocalDateTime endDateTime = endDate == null ? null : endDate.atTime(23, 59, 59);
+
+        List<SellOrderHistoryDTO> content =
+                sellOrderMapper.selectSellOrderHistory(
+                        keyword, statusName, startDateTime, endDateTime, offset, size);
+        int totalCount =
+                sellOrderMapper.countSellOrderHistory(
+                        keyword, statusName, startDateTime, endDateTime);
+        return PageResponseDTO.of(content, totalCount, page, size);
     }
 }

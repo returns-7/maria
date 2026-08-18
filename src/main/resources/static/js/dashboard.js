@@ -110,7 +110,6 @@ $(function () {
             .done(function (res) {
                 var data = res.data;
 
-                $("#clockValue").text(formatDateTime(data.referenceDateTime));
                 $("#kpiPending").text(data.pendingAccountCount + " 건");
                 $("#kpiProvisional").text(data.provisionalExchangeCount + " 건");
                 $("#kpiNearLimit").text(data.nearLimitAccountCount + " 건");

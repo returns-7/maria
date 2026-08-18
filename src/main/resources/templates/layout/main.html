@@ -18,20 +18,12 @@
     <aside class="sidebar">
         <div class="sidebar-brand">
             <div class="sidebar-brand-mark"></div>
-            <div class="sidebar-brand-name">리턴증권 RIA</div>
+            <div class="sidebar-brand-name">리턴증권 MARIA</div>
         </div>
 
         <div class="sidebar-group">
             <div class="sidebar-group-label">심사 · 계좌</div>
             <div class="sidebar-items">
-                <a class="sidebar-item"
-                   th:classappend="${activePath == '/admin/dashboard'} ? ' active' : ''"
-                   th:href="@{/admin/dashboard}">
-                    <span class="sidebar-item-label">
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#e2e8f0" stroke-width="1.4"><rect x="1" y="1" width="5" height="5"/><rect x="8" y="1" width="5" height="5"/><rect x="1" y="8" width="5" height="5"/><rect x="8" y="8" width="5" height="5"/></svg>
-                        대시보드
-                    </span>
-                </a>
                 <a class="sidebar-item" th:href="@{/admin/account}"
                    th:classappend="${activePath == '/admin/account'} ? ' active' : ''">
                     <span class="sidebar-item-label">
@@ -75,12 +67,13 @@
         <div class="sidebar-group">
             <div class="sidebar-group-label">세금 · 리스크</div>
             <div class="sidebar-items">
-                <span class="sidebar-item disabled">
+                <a class="sidebar-item" th:href="@{/admin/tax}"
+                   th:classappend="${activePath == '/admin/tax'} ? ' active' : ''">
                     <span class="sidebar-item-label">
                         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#e2e8f0" stroke-width="1.3"><rect x="2" y="1" width="10" height="12" rx="1"/><line x1="4.5" y1="4.5" x2="9.5" y2="4.5"/><line x1="4.5" y1="7" x2="9.5" y2="7"/><line x1="4.5" y1="9.5" x2="7.5" y2="9.5"/></svg>
                         세액 계산
                     </span>
-                </span>
+                </a>
                 <a class="sidebar-item" th:href="@{/admin/target-products}"
                     th:classappend="${activePath == '/admin/target-products'} ? ' active' : ''">
                     <span class="sidebar-item-label">
@@ -94,25 +87,46 @@
         <div class="sidebar-group">
             <div class="sidebar-group-label">자산 · 인출</div>
             <div class="sidebar-items">
-                <span class="sidebar-item disabled">
+                <a class="sidebar-item" th:href="@{/admin/domestic-investment}"
+                   th:classappend="${activePath == '/admin/domestic-investment'} ? ' active' : ''">
                     <span class="sidebar-item-label">
                         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#e2e8f0" stroke-width="1.3"><rect x="1.5" y="7" width="3" height="5"/><rect x="5.5" y="4" width="3" height="8"/><rect x="9.5" y="1.5" width="3" height="10.5"/></svg>
                         국내투자 현황
                     </span>
-                </span>
+                </a>
                 <span class="sidebar-item disabled">
+                </span>
+                <a class="sidebar-item"
+                   th:classappend="${activePath == '/admin/withdrawals'} ? ' active' : ''"
+                   th:href="@{/admin/withdrawals}">
+                    <span class="sidebar-item-label">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#e2e8f0" stroke-width="1.3"><path d="M2 3h10v8H2z"/><path d="M4 7h6"/><path d="M8 5l2 2-2 2"/></svg>
+                        인출 관리
+                    </span>
+                </a>
+                <a class="sidebar-item"
+                   th:classappend="${activePath == '/admin/account-closures'} ? ' active' : ''"
+                   th:href="@{/admin/account-closures}">
                     <span class="sidebar-item-label">
                         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#e2e8f0" stroke-width="1.3"><circle cx="7" cy="7" r="6"/><line x1="7" y1="4" x2="7" y2="9"/><polyline points="4.5,7 7,9.5 9.5,7"/></svg>
-                        인출 · 해지
+                        계좌 해지 관리
                     </span>
-                    <span class="sidebar-badge" style="color:#c53030">2</span>
-                </span>
+                </a>
+
             </div>
         </div>
 
         <div class="sidebar-group">
             <div class="sidebar-group-label">시스템</div>
             <div class="sidebar-items">
+                <a class="sidebar-item"
+                   th:classappend="${activePath == '/admin/dashboard'} ? ' active' : ''"
+                   th:href="@{/admin/dashboard}">
+                    <span class="sidebar-item-label">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#e2e8f0" stroke-width="1.4"><rect x="1" y="1" width="5" height="5"/><rect x="8" y="1" width="5" height="5"/><rect x="1" y="8" width="5" height="5"/><rect x="8" y="8" width="5" height="5"/></svg>
+                        대시보드
+                    </span>
+                </a>
                 <a class="sidebar-item"
                    th:classappend="${activePath == '/admin/audit-log'} ? ' active' : ''"
                    th:href="@{/admin/audit-log}">
@@ -141,13 +155,12 @@
                 <span class="breadcrumb-current" layout:fragment="breadcrumb">페이지</span>
             </div>
             <div class="topbar-actions">
-                <div class="clock-badge">
+                <button type="button" class="clock-badge" id="clockButton" disabled>
                     <span class="clock-badge-label">기준 시각</span>
                     <span class="clock-badge-value" id="clockValue">-</span>
-                </div>
+                </button>
                 <div class="topbar-divider"></div>
                 <div class="admin-badge">
-                    <span class="admin-avatar"></span>
                     <span id="adminBadge">-</span>
                 </div>
                 <div class="topbar-divider"></div>
@@ -161,6 +174,33 @@
         </main>
     </div>
 
+</div>
+
+<div class="clock-modal-backdrop" id="clockModal" hidden>
+    <section class="clock-modal" role="dialog" aria-modal="true" aria-labelledby="clockModalTitle">
+        <div class="clock-modal-header">
+            <div>
+                <h2 id="clockModalTitle">시스템 업무시각 설정</h2>
+                <p>설정한 시각부터 시스템 업무시각이 계속 흐릅니다.</p>
+            </div>
+            <button type="button" class="clock-modal-close" id="clockModalClose" aria-label="닫기">&times;</button>
+        </div>
+
+        <div class="clock-modal-body">
+            <label for="clockDatetime">변경할 업무시각</label>
+            <input type="datetime-local" id="clockDatetime" step="60">
+
+            <label for="clockReasonCode">변경 사유</label>
+            <input type="text" id="clockReasonCode" maxlength="50"
+                   placeholder="예: DEMO_TIME_CHANGE">
+            <p class="clock-modal-help">변경 이력은 감사로그에 기록됩니다.</p>
+        </div>
+
+        <div class="clock-modal-actions">
+            <button type="button" class="clock-modal-cancel" id="clockModalCancel">취소</button>
+            <button type="button" class="clock-modal-apply" id="clockApplyButton">업무시각 적용</button>
+        </div>
+    </section>
 </div>
 
 <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>

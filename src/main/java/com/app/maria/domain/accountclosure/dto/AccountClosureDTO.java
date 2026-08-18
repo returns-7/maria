@@ -1,6 +1,7 @@
 package com.app.maria.domain.accountclosure.dto;
 
 import com.app.maria.domain.accountclosure.type.AccountClosureStatus;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import lombok.*;
 
@@ -20,4 +21,7 @@ public class AccountClosureDTO {
     private Long processedBy;
     private String rejectionReason;
     private Long withdrawalId;
+    private String customerName;
+    private String accountNo;
+    private BigDecimal accountAmount;
 }
