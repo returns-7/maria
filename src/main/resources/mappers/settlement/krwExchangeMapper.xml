@@ -93,4 +93,17 @@
         WHERE settlement_status = #{settlementStatus}
     </select>
 
+    <select id="sumProvisionalAmountByStatus" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(provisional_amount), 0)
+        FROM krw_exchange
+        WHERE settlement_status = #{settlementStatus}
+    </select>
+
+    <select id="sumFinalizedAmountBetween" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(final_amount), 0)
+        FROM krw_exchange
+        WHERE final_at >= #{start} AND final_at &lt; #{end}
+          AND settlement_status = 'FINALIZED'
+    </select>
+
 </mapper>

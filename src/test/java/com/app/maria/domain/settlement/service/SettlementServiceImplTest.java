@@ -431,6 +431,30 @@ class SettlementServiceImplTest {
                 .hasMessage("환전 조회 실패");
     }
 
+    @Test
+    @DisplayName("가환전 대기금액은 PROVISIONAL 상태 합계를 그대로 반환한다")
+    void getPendingProvisionalAmountReturnsMapperSum() {
+        when(krwExchangeMapper.sumProvisionalAmountByStatus(SettlementStatus.PROVISIONAL))
+                .thenReturn(new BigDecimal("2900000.00"));
+
+        BigDecimal result = settlementService.getPendingProvisionalAmount();
+
+        assertThat(result).isEqualByComparingTo("2900000.00");
+    }
+
+    @Test
+    @DisplayName("확정산 완료금액은 주어진 기간 합계를 그대로 반환한다")
+    void getFinalizedAmountBetweenReturnsMapperSum() {
+        LocalDateTime start = LocalDateTime.of(2026, 8, 9, 0, 0);
+        LocalDateTime end = LocalDateTime.of(2026, 8, 10, 0, 0);
+        when(krwExchangeMapper.sumFinalizedAmountBetween(start, end))
+                .thenReturn(new BigDecimal("110000.00"));
+
+        BigDecimal result = settlementService.getFinalizedAmountBetween(start, end);
+
+        assertThat(result).isEqualByComparingTo("110000.00");
+    }
+
     private SettlementBatchDTO batch() {
         return SettlementBatchDTO.builder()
                 .batchId(BATCH_ID)

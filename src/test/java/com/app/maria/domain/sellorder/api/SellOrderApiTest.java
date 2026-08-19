@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderSummaryDTO;
 import com.app.maria.domain.sellorder.dto.request.SellOrderRequestDTO;
 import com.app.maria.domain.sellorder.dto.response.SellOrderResponseDTO;
 import com.app.maria.domain.sellorder.exception.SellOrderException;
@@ -458,5 +459,36 @@ class SellOrderApiTest {
 
         verify(sellOrderService, never())
                 .getSellOrderHistory(any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    @DisplayName("요약 조회는 오늘 값과 전일 대비 증감률을 반환한다")
+    @WithMockUser(roles = "VIEWER")
+    void getSellOrderSummaryReturns200WithTodayValuesAndChangeRates() throws Exception {
+        SellOrderSummaryDTO summary =
+                SellOrderSummaryDTO.builder()
+                        .todaySellAmount(new BigDecimal("1100000"))
+                        .todaySellAmountChangeRate(new BigDecimal("10.0"))
+                        .todayExecutedCount(5)
+                        .todayExecutedCountChangeRate(new BigDecimal("-50.0"))
+                        .pendingProvisionalAmount(new BigDecimal("2900000"))
+                        .todayFinalizedAmount(new BigDecimal("110000"))
+                        .build();
+        when(sellOrderService.getSellOrderSummary()).thenReturn(summary);
+
+        mockMvc.perform(get("/api/sell-orders/summary"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.todaySellAmount").value(1100000))
+                .andExpect(jsonPath("$.data.todaySellAmountChangeRate").value(10.0))
+                .andExpect(jsonPath("$.data.todayExecutedCount").value(5))
+                .andExpect(jsonPath("$.data.todayExecutedCountChangeRate").value(-50.0))
+                .andExpect(jsonPath("$.data.pendingProvisionalAmount").value(2900000))
+                .andExpect(jsonPath("$.data.todayFinalizedAmount").value(110000));
+    }
+
+    @Test
+    @DisplayName("요약 조회 시 인증되지 않은 요청이면 401을 반환한다")
+    void getSellOrderSummaryReturns401WhenNotAuthenticated() throws Exception {
+        mockMvc.perform(get("/api/sell-orders/summary")).andExpect(status().isUnauthorized());
     }
 }

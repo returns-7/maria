@@ -7,8 +7,7 @@ import com.app.maria.domain.foreignproduct.exception.ForeignProductNotFoundExcep
 import com.app.maria.domain.foreignproduct.mapper.ForeignProductMapper;
 import com.app.maria.domain.inbound.dto.*;
 import com.app.maria.domain.inbound.dto.request.InboundRequestDTO;
-import com.app.maria.domain.inbound.dto.response.AccountHoldingResponseDTO;
-import com.app.maria.domain.inbound.dto.response.InboundResponseDTO;
+import com.app.maria.domain.inbound.dto.response.*;
 import com.app.maria.domain.inbound.exception.InboundNotFoundException;
 import com.app.maria.domain.inbound.mapper.InboundMapper;
 import com.app.maria.domain.registrablestock.dto.RegistrableStockResponseDTO;
@@ -16,7 +15,9 @@ import com.app.maria.domain.sellorder.dto.SellOrderDTO;
 import com.app.maria.domain.sellorder.mapper.SellOrderMapper;
 import com.app.maria.global.clock.service.BusinessClockService;
 import com.app.maria.global.response.ApiResponseDTO;
+import com.app.maria.global.response.PageResponseDTO;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -183,10 +184,73 @@ public class InboundServiceImpl implements InboundService {
 
     @Override
     @Transactional(readOnly = true)
+    public InboundSummaryResponseDTO getSummary() {
+        LocalDate today = businessClockService.now().toLocalDate();
+        LocalDate tomorrow = today.plusDays(1);
+        return new InboundSummaryResponseDTO(inboundMapper.selectTodaySummary(today, tomorrow));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public InboundPageDTO getInbounds(int page, int size) {
         int offset = page * size;
         List<InboundListDTO> content = inboundMapper.selectInbounds(offset, size);
+        attachLots(content);
 
+        long totalElements = inboundMapper.countInbounds();
+        int totalPages = (int) Math.ceil((double) totalElements / size);
+
+        return InboundPageDTO.builder()
+                .content(content)
+                .page(page)
+                .size(size)
+                .totalElements(totalElements)
+                .totalPages(totalPages)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponseDTO<InboundAccountSummaryResponseDTO> getAccountsWithInbounds(
+            int page, int size, String keyword) {
+        int offset = page * size;
+        List<InboundAccountSummaryResponseDTO> content =
+                inboundMapper.selectAccountsWithInbounds(offset, size, keyword).stream()
+                        .map(InboundAccountSummaryResponseDTO::new)
+                        .toList();
+        int totalCount = inboundMapper.countAccountsWithInbounds(keyword);
+        return PageResponseDTO.of(content, totalCount, page, size);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public InboundPageDTO getInboundsByAccount(Long accountId, int page, int size) {
+        int offset = page * size;
+        List<InboundListDTO> content =
+                inboundMapper.selectInboundsByAccountId(accountId, offset, size);
+        attachLots(content);
+
+        long totalElements = inboundMapper.countInboundsByAccountId(accountId);
+        int totalPages = (int) Math.ceil((double) totalElements / size);
+
+        return InboundPageDTO.builder()
+                .content(content)
+                .page(page)
+                .size(size)
+                .totalElements(totalElements)
+                .totalPages(totalPages)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<InboundPriorApprovalResponseDTO> getPriorApprovals(Long inboundId) {
+        return inboundMapper.selectPriorApprovals(inboundId).stream()
+                .map(InboundPriorApprovalResponseDTO::new)
+                .toList();
+    }
+
+    private void attachLots(List<InboundListDTO> content) {
         List<Long> inboundIds = content.stream().map(InboundListDTO::getInboundId).toList();
         List<InboundLotDTO> lots =
                 inboundIds.isEmpty() ? List.of() : inboundMapper.selectLotsByInboundIds(inboundIds);
@@ -212,17 +276,6 @@ public class InboundServiceImpl implements InboundService {
                 lots.stream().collect(Collectors.groupingBy(InboundLotDTO::getInboundId));
         content.forEach(
                 item -> item.setLots(lotsByInboundId.getOrDefault(item.getInboundId(), List.of())));
-
-        long totalElements = inboundMapper.countInbounds();
-        int totalPages = (int) Math.ceil((double) totalElements / size);
-
-        return InboundPageDTO.builder()
-                .content(content)
-                .page(page)
-                .size(size)
-                .totalElements(totalElements)
-                .totalPages(totalPages)
-                .build();
     }
 
     private InboundSellHistoryDTO toSellHistoryDTO(SellOrderDTO sellOrderDTO) {

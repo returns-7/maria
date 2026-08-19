@@ -18,15 +18,16 @@
     align-items: flex-start;
 }
 
-.ib-list-card {
-    width: 360px;
+.ib-account-card {
+    width: 380px;
     flex-shrink: 0;
     overflow: hidden;
 }
 
-.ib-detail-card {
+.ib-inbound-card {
     flex: 1;
     min-width: 0;
+    overflow: hidden;
 }
 
 .ib-list-items {
@@ -40,6 +41,7 @@
     border-left: 3px solid transparent;
     background: var(--cardBg);
     cursor: pointer;
+    box-sizing: border-box;
 }
 
 .ib-list-items .ib-list-item:first-child {
@@ -80,15 +82,19 @@
 .ib-min-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin: 12px 14px;
+    gap: 16px;
+    margin: 20px 20px 18px;
 }
 
 .ib-min-card {
     position: relative;
-    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 22px 8px;
     border: 1px solid var(--cardBorder);
-    border-radius: 4px;
+    border-radius: 8px;
     background: var(--ibUnmatchedBg);
     text-align: center;
     opacity: 0.7;
@@ -116,38 +122,29 @@
 .ib-min-label {
     font: 600 10.5px 'Noto Sans KR', sans-serif;
     color: var(--textMuted);
-    margin-bottom: 5px;
+    margin-bottom: 10px;
+    white-space: nowrap;
 }
 
 .ib-min-value {
-    font: 700 17px 'Noto Sans KR', sans-serif;
+    font: 700 30px 'Noto Sans KR', sans-serif;
     color: var(--textPrimary);
     font-variant-numeric: tabular-nums;
 }
 
 .ib-min-note {
-    font: 500 10px 'Noto Sans KR', sans-serif;
+    font: 500 11px 'Noto Sans KR', sans-serif;
     color: var(--textMuted);
-    margin-top: 4px;
+    margin-top: 8px;
 }
 
 .ib-min-formula {
-    margin: 0 14px 12px;
-    padding: 9px 12px;
+    margin: 0 20px 20px;
+    padding: 14px 18px;
     border: 1px solid var(--cardBorder);
-    border-radius: 4px;
+    border-radius: 6px;
     background: var(--tableHeaderBg);
-    font: 500 12px 'Noto Sans KR', sans-serif;
-    color: var(--textSecondary);
-    font-variant-numeric: tabular-nums;
-}
-
-.ib-min-info {
-    margin: 0 14px 14px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
-    font: 500 12px 'Noto Sans KR', sans-serif;
+    font: 600 14px 'Noto Sans KR', sans-serif;
     color: var(--textSecondary);
     font-variant-numeric: tabular-nums;
 }
@@ -171,7 +168,7 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
-    min-width: 110px;
+    min-width: 80px;
 }
 
 .ib-lot-progress-label {
@@ -216,4 +213,90 @@
 .ib-sell-history-empty {
     color: var(--textMuted);
     font: 500 10.5px 'Noto Sans KR', sans-serif;
+}
+
+.ib-detail-card .section-header {
+    margin: 0 20px 12px;
+    padding-top: 4px;
+}
+
+.ib-detail-card .dash-table {
+    margin: 0 20px 28px;
+    width: calc(100% - 40px);
+    border: 1px solid var(--cardBorder);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.ib-detail-card .dash-table td,
+.ib-detail-card .dash-table th {
+    padding: 12px 16px;
+}
+
+.ib-account-item .ib-list-item-bottom {
+    justify-content: flex-start;
+    gap: 14px;
+}
+
+.detail-overlay-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1500;
+}
+
+.detail-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 700px;
+    max-width: 90vw;
+    background: var(--cardBg);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25);
+    z-index: 1501;
+    overflow-y: auto;
+    padding-top: 44px;
+}
+
+.detail-panel-close {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    width: 30px;
+    height: 30px;
+    border: none;
+    background: transparent;
+    color: var(--textMuted);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 1;
+}
+
+.detail-panel-close:hover {
+    color: var(--textPrimary);
+}
+
+.ib-inbound-table tbody tr {
+    cursor: pointer;
+}
+
+.ib-inbound-table tbody tr:hover {
+    background: var(--tableHeaderBg);
+}
+
+.ib-cell-sub {
+    font: 400 10.5px 'Noto Sans KR', sans-serif;
+    color: var(--textMuted);
+}
+
+.ib-account-filter-bar {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--cardBorder);
+    gap: 6px;
+}
+
+.ib-account-filter-bar .filter-input {
+    min-width: 0;
 }

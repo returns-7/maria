@@ -16,6 +16,9 @@
         <typeAlias alias="InboundListDTO" type="com.app.maria.domain.inbound.dto.InboundListDTO"/>
         <typeAlias alias="SourceLotApprovedQtyDTO" type="com.app.maria.domain.inbound.dto.SourceLotApprovedQtyDTO"/>
         <typeAlias alias="InboundLotDTO" type="com.app.maria.domain.inbound.dto.InboundLotDTO"/>
+        <typeAlias alias="InboundSummaryDTO" type="com.app.maria.domain.inbound.dto.InboundSummaryDTO"/>
+        <typeAlias alias="InboundAccountSummaryDTO" type="com.app.maria.domain.inbound.dto.InboundAccountSummaryDTO"/>
+        <typeAlias alias="InboundPriorApprovalDTO" type="com.app.maria.domain.inbound.dto.InboundPriorApprovalDTO"/>
     </typeAliases>
 
     <environments default="inbound-mapper-test">

@@ -17,15 +17,20 @@ import com.app.maria.domain.foreignproduct.dto.ForeignProductDTO;
 import com.app.maria.domain.foreignproduct.exception.ForeignProductNotFoundException;
 import com.app.maria.domain.foreignproduct.mapper.ForeignProductMapper;
 import com.app.maria.domain.foreignproduct.type.ForeignProductType;
+import com.app.maria.domain.inbound.dto.InboundAccountSummaryDTO;
 import com.app.maria.domain.inbound.dto.InboundDetailDTO;
 import com.app.maria.domain.inbound.dto.InboundHoldingDTO;
 import com.app.maria.domain.inbound.dto.InboundListDTO;
 import com.app.maria.domain.inbound.dto.InboundLotDTO;
 import com.app.maria.domain.inbound.dto.InboundPageDTO;
+import com.app.maria.domain.inbound.dto.InboundPriorApprovalDTO;
+import com.app.maria.domain.inbound.dto.InboundSummaryDTO;
 import com.app.maria.domain.inbound.dto.SourceLotApprovedQtyDTO;
 import com.app.maria.domain.inbound.dto.request.InboundRequestDTO;
 import com.app.maria.domain.inbound.dto.response.AccountHoldingResponseDTO;
+import com.app.maria.domain.inbound.dto.response.InboundPriorApprovalResponseDTO;
 import com.app.maria.domain.inbound.dto.response.InboundResponseDTO;
+import com.app.maria.domain.inbound.dto.response.InboundSummaryResponseDTO;
 import com.app.maria.domain.inbound.exception.InboundNotFoundException;
 import com.app.maria.domain.inbound.mapper.InboundMapper;
 import com.app.maria.domain.registrablestock.dto.RegistrableStockResponseDTO;
@@ -536,6 +541,126 @@ class InboundServiceImplTest {
         inboundService.getInbounds(0, 20);
 
         verify(sellOrderMapper, never()).selectSellOrdersByInboundDetailIds(any());
+    }
+
+    @Test
+    void getSummaryDelegatesToMapperUsingClockTodayRange() {
+        InboundSummaryDTO summaryDTO =
+                InboundSummaryDTO.builder()
+                        .todayProcessedCount(3)
+                        .todayRejectedCount(1)
+                        .todayReducedCount(1)
+                        .todayApprovedQtySum(BigDecimal.valueOf(70))
+                        .build();
+        when(inboundMapper.selectTodaySummary(NOW.toLocalDate(), NOW.toLocalDate().plusDays(1)))
+                .thenReturn(summaryDTO);
+
+        InboundSummaryResponseDTO result = inboundService.getSummary();
+
+        verify(inboundMapper).selectTodaySummary(NOW.toLocalDate(), NOW.toLocalDate().plusDays(1));
+        assertThat(result.getTodayProcessedCount()).isEqualTo(3);
+        assertThat(result.getTodayRejectedCount()).isEqualTo(1);
+        assertThat(result.getTodayReducedCount()).isEqualTo(1);
+        assertThat(result.getTodayApprovedQtySum()).isEqualByComparingTo(BigDecimal.valueOf(70));
+    }
+
+    @Test
+    void getAccountsWithInboundsMapsMapperResultToResponseDTOsWithPaginationMetadata() {
+        InboundAccountSummaryDTO accountSummary =
+                InboundAccountSummaryDTO.builder()
+                        .accountId(ACCOUNT_ID)
+                        .accountNo("1234567890")
+                        .customerName("홍길동")
+                        .inboundCount(2)
+                        .lastProcessedAt(NOW)
+                        .build();
+        when(inboundMapper.selectAccountsWithInbounds(0, 20, null))
+                .thenReturn(List.of(accountSummary));
+        when(inboundMapper.countAccountsWithInbounds(null)).thenReturn(1);
+
+        var result = inboundService.getAccountsWithInbounds(0, 20, null);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getAccountNo()).isEqualTo("1234567890");
+        assertThat(result.getContent().get(0).getInboundCount()).isEqualTo(2);
+        assertThat(result.getTotalCount()).isEqualTo(1);
+        assertThat(result.getPage()).isEqualTo(0);
+        assertThat(result.getSize()).isEqualTo(20);
+    }
+
+    @Test
+    void getAccountsWithInboundsPassesKeywordThroughToMapper() {
+        when(inboundMapper.selectAccountsWithInbounds(0, 20, "홍길동")).thenReturn(List.of());
+        when(inboundMapper.countAccountsWithInbounds("홍길동")).thenReturn(0);
+
+        inboundService.getAccountsWithInbounds(0, 20, "홍길동");
+
+        verify(inboundMapper).selectAccountsWithInbounds(0, 20, "홍길동");
+        verify(inboundMapper).countAccountsWithInbounds("홍길동");
+    }
+
+    @Test
+    void getAccountsWithInboundsReturnsEmptyContentWhenNoAccountsExist() {
+        when(inboundMapper.selectAccountsWithInbounds(0, 20, null)).thenReturn(List.of());
+        when(inboundMapper.countAccountsWithInbounds(null)).thenReturn(0);
+
+        var result = inboundService.getAccountsWithInbounds(0, 20, null);
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalCount()).isEqualTo(0);
+    }
+
+    @Test
+    void getInboundsByAccountDelegatesToMapperWithAccountIdAndAttachesLots() {
+        InboundListDTO item = InboundListDTO.builder().inboundId(1L).accountId(ACCOUNT_ID).build();
+        when(inboundMapper.selectInboundsByAccountId(ACCOUNT_ID, 0, 20)).thenReturn(List.of(item));
+        when(inboundMapper.countInboundsByAccountId(ACCOUNT_ID)).thenReturn(1);
+        when(inboundMapper.selectLotsByInboundIds(List.of(1L))).thenReturn(List.of());
+
+        InboundPageDTO result = inboundService.getInboundsByAccount(ACCOUNT_ID, 0, 20);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getLots()).isEmpty();
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        verify(inboundMapper).selectInboundsByAccountId(ACCOUNT_ID, 0, 20);
+    }
+
+    @Test
+    void getInboundsByAccountReturnsEmptyContentWhenAccountHasNoInbounds() {
+        when(inboundMapper.selectInboundsByAccountId(ACCOUNT_ID, 0, 20)).thenReturn(List.of());
+        when(inboundMapper.countInboundsByAccountId(ACCOUNT_ID)).thenReturn(0);
+
+        InboundPageDTO result = inboundService.getInboundsByAccount(ACCOUNT_ID, 0, 20);
+
+        assertThat(result.getContent()).isEmpty();
+        verify(sellOrderMapper, never()).selectSellOrdersByInboundDetailIds(any());
+    }
+
+    @Test
+    void getPriorApprovalsMapsMapperResultToResponseDTOs() {
+        InboundPriorApprovalDTO prior =
+                InboundPriorApprovalDTO.builder()
+                        .inboundId(1L)
+                        .requestedQty(BigDecimal.valueOf(10))
+                        .approvedQty(BigDecimal.valueOf(10))
+                        .processedAt(NOW)
+                        .build();
+        when(inboundMapper.selectPriorApprovals(2L)).thenReturn(List.of(prior));
+
+        List<InboundPriorApprovalResponseDTO> result = inboundService.getPriorApprovals(2L);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getInboundId()).isEqualTo(1L);
+        assertThat(result.get(0).getApprovedQty()).isEqualByComparingTo(BigDecimal.valueOf(10));
+    }
+
+    @Test
+    void getPriorApprovalsReturnsEmptyListWhenNoPriorApprovalsExist() {
+        when(inboundMapper.selectPriorApprovals(2L)).thenReturn(List.of());
+
+        List<InboundPriorApprovalResponseDTO> result = inboundService.getPriorApprovals(2L);
+
+        assertThat(result).isEmpty();
     }
 
     private InboundHoldingDTO holding(Long foreignProductId, BigDecimal currentQty) {

@@ -3,6 +3,7 @@ package com.app.maria.domain.settlement.mapper;
 import com.app.maria.domain.settlement.dto.KrwExchangeDTO;
 import com.app.maria.domain.settlement.type.SettlementStatus;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import org.apache.ibatis.annotations.Mapper;
 
@@ -24,4 +25,8 @@ public interface KrwExchangeMapper {
     int insertProvisional(KrwExchangeDTO krwExchangeDTO);
 
     int countByStatus(SettlementStatus settlementStatus);
+
+    BigDecimal sumProvisionalAmountByStatus(SettlementStatus settlementStatus);
+
+    BigDecimal sumFinalizedAmountBetween(LocalDateTime start, LocalDateTime end);
 }

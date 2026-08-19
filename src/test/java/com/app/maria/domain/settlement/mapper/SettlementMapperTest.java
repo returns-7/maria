@@ -410,6 +410,29 @@ class SettlementMapperTest {
         return SettlementItemDTO.builder().batchId(batchId).itemId(lastItemId).build();
     }
 
+    @Test
+    @DisplayName("가환전 대기금액은 PROVISIONAL 상태 건만 합산한다")
+    void sumsProvisionalAmountByStatus() {
+        BigDecimal pending =
+                krwExchangeMapper.sumProvisionalAmountByStatus(SettlementStatus.PROVISIONAL);
+
+        assertThat(pending).isEqualByComparingTo("2900000.00");
+    }
+
+    @Test
+    @DisplayName("확정산 완료금액은 final_at이 구간 안에 있는 FINALIZED 건만 합산한다")
+    void sumsFinalizedAmountBetweenDateRange() {
+        BigDecimal finalizedOnDay =
+                krwExchangeMapper.sumFinalizedAmountBetween(
+                        LocalDateTime.of(2026, 8, 3, 0, 0), LocalDateTime.of(2026, 8, 4, 0, 0));
+        BigDecimal finalizedOutsideDay =
+                krwExchangeMapper.sumFinalizedAmountBetween(
+                        LocalDateTime.of(2026, 8, 2, 0, 0), LocalDateTime.of(2026, 8, 3, 0, 0));
+
+        assertThat(finalizedOnDay).isEqualByComparingTo("110000.00");
+        assertThat(finalizedOutsideDay).isEqualByComparingTo("0");
+    }
+
     private void resetSchema() throws SQLException {
         try (Connection connection = dataSource.getConnection();
                 Statement statement = connection.createStatement()) {

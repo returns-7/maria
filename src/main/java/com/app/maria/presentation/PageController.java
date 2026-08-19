@@ -17,10 +17,10 @@ public class PageController {
         return "login";
     }
 
-    @GetMapping("/admin/dashboard")
-    public String dashboard(Model model) {
-        model.addAttribute("activePath", "/admin/dashboard");
-        return "dashboard";
+    @GetMapping("/admin/statistics")
+    public String statistics(Model model) {
+        model.addAttribute("activePath", "/admin/statistics");
+        return "statistics";
     }
 
     @GetMapping("/admin/target-products")

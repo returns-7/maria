@@ -7,6 +7,7 @@ import com.app.maria.domain.inbound.dto.InboundDetailDTO;
 import com.app.maria.domain.inbound.mapper.InboundMapper;
 import com.app.maria.domain.sellorder.dto.SellOrderDTO;
 import com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderSummaryDTO;
 import com.app.maria.domain.sellorder.dto.request.SellOrderRequestDTO;
 import com.app.maria.domain.sellorder.dto.response.SellOrderResponseDTO;
 import com.app.maria.domain.sellorder.exception.SellOrderException;
@@ -14,6 +15,7 @@ import com.app.maria.domain.sellorder.exception.SellOrderNotFoundException;
 import com.app.maria.domain.sellorder.mapper.SellOrderMapper;
 import com.app.maria.domain.sellorder.type.SellOrderStatus;
 import com.app.maria.domain.settlement.service.ProvisionalExchangeService;
+import com.app.maria.domain.settlement.service.SettlementService;
 import com.app.maria.global.audit.dto.AuditLogDTO;
 import com.app.maria.global.audit.service.AuditLogService;
 import com.app.maria.global.client.exchange.ExchangeRateClient;
@@ -22,6 +24,7 @@ import com.app.maria.global.client.kis.KisPriceClient;
 import com.app.maria.global.clock.service.BusinessClockService;
 import com.app.maria.global.response.PageResponseDTO;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -45,6 +48,7 @@ public class SellOrderServiceImpl implements SellOrderService {
     private final BusinessClockService businessClockService;
     private final ProvisionalExchangeService provisionalExchangeService;
     private final AuditLogService auditLogService;
+    private final SettlementService settlementService;
 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -182,6 +186,58 @@ public class SellOrderServiceImpl implements SellOrderService {
         LocalDateTime start = businessClockService.now().toLocalDate().atStartOfDay();
         LocalDateTime end = start.plusDays(1);
         return sellOrderMapper.sumSellAmountBetween(start, end);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SellOrderSummaryDTO getSellOrderSummary() {
+        LocalDate today = businessClockService.now().toLocalDate();
+        LocalDate yesterday = today.minusDays(1);
+
+        BigDecimal todaySellAmount = getTodaySellAmount();
+        BigDecimal yesterdaySellAmount =
+                sellOrderMapper.sumSellAmountBetween(
+                        yesterday.atStartOfDay(), today.atStartOfDay());
+
+        int todayExecutedCount =
+                sellOrderMapper.countSellOrderHistory(
+                        null,
+                        SellOrderStatus.EXECUTED.name(),
+                        today.atStartOfDay(),
+                        today.atTime(23, 59, 59));
+        int yesterdayExecutedCount =
+                sellOrderMapper.countSellOrderHistory(
+                        null,
+                        SellOrderStatus.EXECUTED.name(),
+                        yesterday.atStartOfDay(),
+                        yesterday.atTime(23, 59, 59));
+
+        BigDecimal pendingProvisionalAmount = settlementService.getPendingProvisionalAmount();
+        BigDecimal todayFinalizedAmount =
+                settlementService.getFinalizedAmountBetween(
+                        today.atStartOfDay(), today.plusDays(1).atStartOfDay());
+
+        return SellOrderSummaryDTO.builder()
+                .todaySellAmount(todaySellAmount)
+                .todaySellAmountChangeRate(changeRate(todaySellAmount, yesterdaySellAmount))
+                .todayExecutedCount(todayExecutedCount)
+                .todayExecutedCountChangeRate(
+                        changeRate(
+                                BigDecimal.valueOf(todayExecutedCount),
+                                BigDecimal.valueOf(yesterdayExecutedCount)))
+                .pendingProvisionalAmount(pendingProvisionalAmount)
+                .todayFinalizedAmount(todayFinalizedAmount)
+                .build();
+    }
+
+    private BigDecimal changeRate(BigDecimal today, BigDecimal yesterday) {
+        if (yesterday == null || yesterday.compareTo(BigDecimal.ZERO) == 0) {
+            return null;
+        }
+        return today.subtract(yesterday)
+                .divide(yesterday, 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100))
+                .setScale(1, RoundingMode.HALF_UP);
     }
 
     @Override

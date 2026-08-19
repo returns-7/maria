@@ -14,6 +14,7 @@ import lombok.*;
 @Builder
 public class InboundListResponseDTO {
     private Long inboundId;
+    private Long accountId;
     private String accountNo;
     private String customerName;
     private String ticker;
@@ -29,6 +30,7 @@ public class InboundListResponseDTO {
 
     public InboundListResponseDTO(InboundListDTO dto) {
         this.inboundId = dto.getInboundId();
+        this.accountId = dto.getAccountId();
         this.accountNo = dto.getAccountNo();
         this.customerName = dto.getCustomerName();
         this.ticker = dto.getTicker();

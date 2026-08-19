@@ -4,7 +4,7 @@
       layout:decorate="~{layout/main}">
 <head>
     <th:block layout:fragment="pageStyles">
-        <link rel="stylesheet" th:href="@{/css/dashboard.css}">
+        <link rel="stylesheet" th:href="@{/css/statistics.css}">
         <link rel="stylesheet" th:href="@{/css/inbound-management.css}">
     </th:block>
 </head>
@@ -14,19 +14,52 @@
     <div id="ibLoading" class="dash-loading">불러오는 중...</div>
     <div id="ibError" class="dash-error" style="display:none"></div>
     <div id="ibBody" style="display:none">
-        <div class="ib-layout">
-            <div class="card ib-list-card">
-                <div class="section-header">
-                    <span>입고 요청 목록</span>
-                    <span class="section-sub" id="ibListCount">0건 수신</span>
-                </div>
-                <div id="ibListItems" class="ib-list-items"></div>
-                <div id="ibPagination" class="pagination"></div>
+        <div class="kpi-grid">
+            <div class="card kpi-card">
+                <div class="kpi-label">오늘 처리 건수</div>
+                <div class="kpi-value" id="kpiTodayProcessed">-</div>
             </div>
-            <div class="card ib-detail-card" id="ibDetail">
-                <div class="dash-empty">왼쪽에서 입고 건을 선택하세요.</div>
+            <div class="card kpi-card kpi-card-danger">
+                <div class="kpi-label">오늘 반려 건수</div>
+                <div class="kpi-value kpi-value-danger" id="kpiTodayRejected">-</div>
+            </div>
+            <div class="card kpi-card">
+                <div class="kpi-label">오늘 한도초과·감액 건수</div>
+                <div class="kpi-value" id="kpiTodayReduced">-</div>
+            </div>
+            <div class="card kpi-card">
+                <div class="kpi-label">오늘 총 승인수량</div>
+                <div class="kpi-value" id="kpiTodayApprovedQty">-</div>
             </div>
         </div>
+        <div class="ib-layout">
+            <div class="card ib-account-card">
+                <div class="section-header">
+                    <span>계좌 목록</span>
+                    <span class="section-sub" id="ibAccountCount">0개 계좌</span>
+                </div>
+                <div class="filter-bar ib-account-filter-bar">
+                    <input type="text" id="ibAccountSearch" class="filter-input" placeholder="고객명 또는 계좌번호 검색">
+                    <button type="button" id="ibAccountSearchSubmit" class="btn btn-primary">검색</button>
+                    <button type="button" id="ibAccountSearchReset" class="btn">초기화</button>
+                </div>
+                <div id="ibAccountItems" class="ib-list-items"></div>
+                <div id="ibAccountPagination" class="pagination"></div>
+            </div>
+            <div class="card ib-inbound-card">
+                <div class="section-header">
+                    <span id="ibInboundTitle">입고 내역</span>
+                    <span class="section-sub" id="ibInboundCount">0건</span>
+                </div>
+                <div id="ibInboundItems" class="ib-list-items"></div>
+                <div id="ibInboundPagination" class="pagination"></div>
+            </div>
+        </div>
+    </div>
+    <div id="ibOverlayBackdrop" class="detail-overlay-backdrop" style="display:none"></div>
+    <div id="ibOverlayPanel" class="detail-panel" style="display:none">
+        <button type="button" id="ibOverlayClose" class="detail-panel-close" aria-label="닫기">&times;</button>
+        <div id="ibOverlayBody" class="detail-panel-body"></div>
     </div>
 </div>
 <th:block layout:fragment="pageScripts">

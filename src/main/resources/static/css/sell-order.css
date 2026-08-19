@@ -151,3 +151,16 @@
         align-items: stretch;
     }
 }
+
+.kpi-change {
+    font: 600 12px 'Noto Sans KR', sans-serif;
+    margin-top: 4px;
+}
+
+.kpi-change.up {
+    color: var(--danger);
+}
+
+.kpi-change.down {
+    color: var(--accent);
+}

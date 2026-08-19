@@ -2,6 +2,7 @@ package com.app.maria.domain.inbound.mapper;
 
 import com.app.maria.domain.inbound.dto.*;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.apache.ibatis.annotations.Mapper;
@@ -36,4 +37,21 @@ public interface InboundMapper {
     List<InboundLotDTO> selectLotsByInboundIds(@Param("inboundIds") List<Long> inboundIds);
 
     int countInbounds();
+
+    InboundSummaryDTO selectTodaySummary(
+            @Param("today") LocalDate today, @Param("tomorrow") LocalDate tomorrow);
+
+    List<InboundAccountSummaryDTO> selectAccountsWithInbounds(
+            @Param("offset") int offset, @Param("size") int size, @Param("keyword") String keyword);
+
+    int countAccountsWithInbounds(@Param("keyword") String keyword);
+
+    List<InboundListDTO> selectInboundsByAccountId(
+            @Param("accountId") Long accountId,
+            @Param("offset") int offset,
+            @Param("size") int size);
+
+    int countInboundsByAccountId(@Param("accountId") Long accountId);
+
+    List<InboundPriorApprovalDTO> selectPriorApprovals(@Param("inboundId") Long inboundId);
 }

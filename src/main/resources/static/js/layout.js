@@ -127,6 +127,7 @@ $(function () {
     function applyTheme(theme) {
         document.documentElement.setAttribute("data-theme", theme);
         $("#themeToggle").text(theme === "dark" ? "🌙" : "☀");
+        $(document).trigger("maria:themeChange", [theme]);
     }
 
     function loadAccountReviewCount() {

@@ -1,6 +1,7 @@
 package com.app.maria.domain.sellorder.service;
 
 import com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderSummaryDTO;
 import com.app.maria.domain.sellorder.dto.request.SellOrderRequestDTO;
 import com.app.maria.domain.sellorder.dto.response.SellOrderResponseDTO;
 import com.app.maria.domain.sellorder.type.SellOrderStatus;
@@ -18,6 +19,8 @@ public interface SellOrderService {
     List<SellOrderResponseDTO> getSellOrderByAccount(Long accountId);
 
     BigDecimal getTodaySellAmount();
+
+    SellOrderSummaryDTO getSellOrderSummary();
 
     PageResponseDTO<SellOrderHistoryDTO> getSellOrderHistory(
             String keyword,

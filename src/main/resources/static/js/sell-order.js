@@ -68,6 +68,44 @@ $(function () {
         return params;
     }
 
+    function formatChangeRate(rate) {
+        if (rate === null || rate === undefined) {
+            return { text: "—", cls: "" };
+        }
+        var num = Number(rate);
+        var arrow = num > 0 ? "▲" : num < 0 ? "▼" : "-";
+        var cls = num > 0 ? "up" : num < 0 ? "down" : "";
+        return { text: arrow + Math.abs(num).toFixed(1) + "%", cls: cls };
+    }
+
+    function renderSummary(summary) {
+        $("#kpiTodaySellAmount").text(formatAmount(summary.todaySellAmount));
+        $("#kpiTodayExecutedCount").text((summary.todayExecutedCount || 0) + "건");
+        $("#kpiPendingProvisionalAmount").text(formatAmount(summary.pendingProvisionalAmount));
+        $("#kpiTodayFinalizedAmount").text(formatAmount(summary.todayFinalizedAmount));
+
+        var sellChange = formatChangeRate(summary.todaySellAmountChangeRate);
+        $("#kpiTodaySellAmountChange").text(sellChange.text).attr("class", "kpi-change " + sellChange.cls);
+
+        var countChange = formatChangeRate(summary.todayExecutedCountChangeRate);
+        $("#kpiTodayExecutedCountChange").text(countChange.text).attr("class", "kpi-change " + countChange.cls);
+    }
+
+    function loadSellOrderSummary() {
+        MARIA.auth.ajax({
+            url: "/api/sell-orders/summary",
+            method: "GET"
+        })
+            .done(function (res) {
+                renderSummary(res.data || {});
+            })
+            .fail(function (xhr) {
+                if (xhr.status === 401) {
+                    return;
+                }
+            });
+    }
+
     function renderRows(orders) {
         var $body = $("#sellOrderListBody").empty();
 
@@ -179,5 +217,6 @@ $(function () {
         loadSellOrders();
     });
 
+    loadSellOrderSummary();
     loadSellOrders();
 });

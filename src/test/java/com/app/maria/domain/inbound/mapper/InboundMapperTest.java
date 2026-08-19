@@ -2,12 +2,15 @@ package com.app.maria.domain.inbound.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.app.maria.domain.inbound.dto.InboundAccountSummaryDTO;
 import com.app.maria.domain.inbound.dto.InboundDTO;
 import com.app.maria.domain.inbound.dto.InboundDetailDTO;
 import com.app.maria.domain.inbound.dto.InboundHoldingDTO;
 import com.app.maria.domain.inbound.dto.InboundListDTO;
 import com.app.maria.domain.inbound.dto.InboundLotDTO;
 import com.app.maria.domain.inbound.dto.InboundMinDTO;
+import com.app.maria.domain.inbound.dto.InboundPriorApprovalDTO;
+import com.app.maria.domain.inbound.dto.InboundSummaryDTO;
 import com.app.maria.domain.inbound.dto.SourceLotApprovedQtyDTO;
 import com.app.maria.domain.registrablestock.type.GeneralAccountType;
 import java.io.IOException;
@@ -17,6 +20,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.apache.ibatis.datasource.pooled.PooledDataSource;
@@ -582,6 +586,541 @@ class InboundMapperTest {
     @DisplayName("일치하는 inboundId가 없으면 빈 목록을 반환한다")
     void selectLotsByInboundIdsReturnsEmptyListWhenNoMatchingInboundIds() {
         List<InboundLotDTO> result = inboundMapper.selectLotsByInboundIds(List.of(999L));
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("오늘 처리된 건만 집계하고, 반려·감액 건수를 구분해서 센다")
+    void selectTodaySummaryCountsTodaysInboundsAndClassifiesRejectedAndReduced()
+            throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertAccount(1L, 1L, "1234567890");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        LocalDateTime today = LocalDateTime.of(2026, 3, 10, 9, 0);
+        LocalDateTime yesterday = LocalDateTime.of(2026, 3, 9, 9, 0);
+
+        // 전량승인
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(50),
+                BigDecimal.valueOf(50),
+                BigDecimal.valueOf(50),
+                BigDecimal.valueOf(50),
+                today);
+        // 반려(0주 승인)
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(30),
+                BigDecimal.ZERO,
+                BigDecimal.valueOf(30),
+                BigDecimal.ZERO,
+                today);
+        // 감액(부분승인)
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(40),
+                BigDecimal.valueOf(20),
+                BigDecimal.valueOf(40),
+                BigDecimal.valueOf(20),
+                today);
+        // 어제 처리분 - 오늘 집계에서 제외돼야 함
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                yesterday);
+
+        InboundSummaryDTO result =
+                inboundMapper.selectTodaySummary(
+                        LocalDate.of(2026, 3, 10), LocalDate.of(2026, 3, 11));
+
+        assertThat(result.getTodayProcessedCount()).isEqualTo(3);
+        assertThat(result.getTodayRejectedCount()).isEqualTo(1);
+        assertThat(result.getTodayReducedCount()).isEqualTo(1);
+        assertThat(result.getTodayApprovedQtySum()).isEqualByComparingTo(BigDecimal.valueOf(70));
+    }
+
+    @Test
+    @DisplayName("오늘 처리된 건이 없으면 전부 0을 반환한다")
+    void selectTodaySummaryReturnsZerosWhenNoInboundsToday() {
+        InboundSummaryDTO result =
+                inboundMapper.selectTodaySummary(
+                        LocalDate.of(2026, 3, 10), LocalDate.of(2026, 3, 11));
+
+        assertThat(result.getTodayProcessedCount()).isEqualTo(0);
+        assertThat(result.getTodayRejectedCount()).isEqualTo(0);
+        assertThat(result.getTodayReducedCount()).isEqualTo(0);
+        assertThat(result.getTodayApprovedQtySum()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    @DisplayName("계좌별 입고 이력을 최근 처리일시 내림차순으로 반환하고, 계좌별 건수를 집계한다")
+    void selectAccountsWithInboundsReturnsAccountsOrderedByLastProcessedAtDesc()
+            throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertCustomer(2L, "김철수");
+        insertAccount(1L, 1L, "1234567890");
+        insertAccount(2L, 2L, "9876543210");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        insertForeignProduct(2L, "MSFT", "Microsoft");
+
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 1, 9, 0));
+        insertFullInbound(
+                1L,
+                2L,
+                BigDecimal.valueOf(20),
+                BigDecimal.valueOf(20),
+                BigDecimal.valueOf(20),
+                BigDecimal.valueOf(20),
+                LocalDateTime.of(2026, 3, 5, 9, 0));
+        insertFullInbound(
+                2L,
+                1L,
+                BigDecimal.valueOf(30),
+                BigDecimal.valueOf(30),
+                BigDecimal.valueOf(30),
+                BigDecimal.valueOf(30),
+                LocalDateTime.of(2026, 3, 3, 9, 0));
+
+        List<InboundAccountSummaryDTO> result =
+                inboundMapper.selectAccountsWithInbounds(0, 10, null);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).getAccountId()).isEqualTo(1L);
+        assertThat(result.get(0).getInboundCount()).isEqualTo(2);
+        assertThat(result.get(0).getLastProcessedAt())
+                .isEqualTo(LocalDateTime.of(2026, 3, 5, 9, 0));
+        assertThat(result.get(1).getAccountId()).isEqualTo(2L);
+        assertThat(result.get(1).getInboundCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("size만큼만 조회하고, offset을 지정하면 그만큼 건너뛴 뒤부터 조회한다")
+    void selectAccountsWithInboundsAppliesOffsetAndSizeForPagination() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertCustomer(2L, "김철수");
+        insertCustomer(3L, "이영희");
+        insertAccount(1L, 1L, "1111111111");
+        insertAccount(2L, 2L, "2222222222");
+        insertAccount(3L, 3L, "3333333333");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 1, 9, 0));
+        insertFullInbound(
+                2L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 2, 9, 0));
+        insertFullInbound(
+                3L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 3, 9, 0));
+
+        List<InboundAccountSummaryDTO> result =
+                inboundMapper.selectAccountsWithInbounds(1, 1, null);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getAccountId()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("입고 이력이 없으면 빈 목록을 반환한다")
+    void selectAccountsWithInboundsReturnsEmptyListWhenNoInboundsExist() {
+        List<InboundAccountSummaryDTO> result =
+                inboundMapper.selectAccountsWithInbounds(0, 10, null);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("keyword가 고객명에 부분일치하면 해당 계좌만 반환한다")
+    void selectAccountsWithInboundsFiltersByCustomerNameKeyword() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertCustomer(2L, "김철수");
+        insertAccount(1L, 1L, "1111111111");
+        insertAccount(2L, 2L, "2222222222");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 1, 9, 0));
+        insertFullInbound(
+                2L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 2, 9, 0));
+
+        List<InboundAccountSummaryDTO> result =
+                inboundMapper.selectAccountsWithInbounds(0, 10, "홍길동");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getAccountId()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("keyword가 계좌번호에 부분일치하면 해당 계좌만 반환한다")
+    void selectAccountsWithInboundsFiltersByAccountNoKeyword() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertCustomer(2L, "김철수");
+        insertAccount(1L, 1L, "1111111111");
+        insertAccount(2L, 2L, "2222222222");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 1, 9, 0));
+        insertFullInbound(
+                2L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 2, 9, 0));
+
+        List<InboundAccountSummaryDTO> result =
+                inboundMapper.selectAccountsWithInbounds(0, 10, "2222");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getAccountId()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("keyword와 일치하는 계좌가 없으면 빈 목록을 반환한다")
+    void selectAccountsWithInboundsReturnsEmptyListWhenKeywordMatchesNothing() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertAccount(1L, 1L, "1111111111");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 1, 9, 0));
+
+        List<InboundAccountSummaryDTO> result =
+                inboundMapper.selectAccountsWithInbounds(0, 10, "존재하지않음");
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("입고 이력이 있는 계좌 수를 반환한다")
+    void countAccountsWithInboundsReturnsDistinctAccountCount() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertAccount(1L, 1L, "1234567890");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 1, 9, 0));
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(20),
+                BigDecimal.valueOf(20),
+                BigDecimal.valueOf(20),
+                BigDecimal.valueOf(20),
+                LocalDateTime.of(2026, 3, 2, 9, 0));
+
+        int result = inboundMapper.countAccountsWithInbounds(null);
+
+        assertThat(result).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("입고 이력이 없으면 0을 반환한다")
+    void countAccountsWithInboundsReturnsZeroWhenNoInboundsExist() {
+        int result = inboundMapper.countAccountsWithInbounds(null);
+
+        assertThat(result).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("keyword와 일치하는 계좌만 센다")
+    void countAccountsWithInboundsFiltersByKeyword() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertCustomer(2L, "김철수");
+        insertAccount(1L, 1L, "1111111111");
+        insertAccount(2L, 2L, "2222222222");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 1, 9, 0));
+        insertFullInbound(
+                2L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 2, 9, 0));
+
+        int result = inboundMapper.countAccountsWithInbounds("홍길동");
+
+        assertThat(result).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("해당 계좌의 입고 이력만 처리일시 최신순으로 반환한다")
+    void selectInboundsByAccountIdReturnsOnlyMatchingAccountOrderedByProcessedAtDesc()
+            throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertCustomer(2L, "김철수");
+        insertAccount(1L, 1L, "1234567890");
+        insertAccount(2L, 2L, "9876543210");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        Long earlier =
+                insertFullInbound(
+                        1L,
+                        1L,
+                        BigDecimal.valueOf(10),
+                        BigDecimal.valueOf(10),
+                        BigDecimal.valueOf(10),
+                        BigDecimal.valueOf(10),
+                        LocalDateTime.of(2026, 3, 1, 9, 0));
+        Long later =
+                insertFullInbound(
+                        1L,
+                        1L,
+                        BigDecimal.valueOf(20),
+                        BigDecimal.valueOf(20),
+                        BigDecimal.valueOf(20),
+                        BigDecimal.valueOf(20),
+                        LocalDateTime.of(2026, 3, 5, 9, 0));
+        insertFullInbound(
+                2L,
+                1L,
+                BigDecimal.valueOf(30),
+                BigDecimal.valueOf(30),
+                BigDecimal.valueOf(30),
+                BigDecimal.valueOf(30),
+                LocalDateTime.of(2026, 3, 3, 9, 0));
+
+        List<InboundListDTO> result = inboundMapper.selectInboundsByAccountId(1L, 0, 10);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).getInboundId()).isEqualTo(later);
+        assertThat(result.get(1).getInboundId()).isEqualTo(earlier);
+    }
+
+    @Test
+    @DisplayName("일치하는 계좌가 없으면 빈 목록을 반환한다")
+    void selectInboundsByAccountIdReturnsEmptyListWhenNoMatchingAccount() {
+        List<InboundListDTO> result = inboundMapper.selectInboundsByAccountId(999L, 0, 10);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("countInboundsByAccountId는 해당 계좌의 입고 건수만 센다")
+    void countInboundsByAccountIdReturnsCountForThatAccountOnly() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertCustomer(2L, "김철수");
+        insertAccount(1L, 1L, "1234567890");
+        insertAccount(2L, 2L, "9876543210");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 1, 9, 0));
+        insertFullInbound(
+                1L,
+                1L,
+                BigDecimal.valueOf(20),
+                BigDecimal.valueOf(20),
+                BigDecimal.valueOf(20),
+                BigDecimal.valueOf(20),
+                LocalDateTime.of(2026, 3, 2, 9, 0));
+        insertFullInbound(
+                2L,
+                1L,
+                BigDecimal.valueOf(30),
+                BigDecimal.valueOf(30),
+                BigDecimal.valueOf(30),
+                BigDecimal.valueOf(30),
+                LocalDateTime.of(2026, 3, 3, 9, 0));
+
+        int result = inboundMapper.countInboundsByAccountId(1L);
+
+        assertThat(result).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("같은 계좌·같은 종목의 과거 입고 건을 처리일시 오름차순으로 반환한다")
+    void selectPriorApprovalsReturnsOtherInboundsForSameAccountAndProductOrderedAscending()
+            throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertAccount(1L, 1L, "1234567890");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        Long first =
+                insertFullInbound(
+                        1L,
+                        1L,
+                        BigDecimal.valueOf(10),
+                        BigDecimal.valueOf(10),
+                        BigDecimal.valueOf(50),
+                        BigDecimal.valueOf(10),
+                        LocalDateTime.of(2026, 3, 1, 9, 0));
+        Long second =
+                insertFullInbound(
+                        1L,
+                        1L,
+                        BigDecimal.valueOf(15),
+                        BigDecimal.valueOf(15),
+                        BigDecimal.valueOf(50),
+                        BigDecimal.valueOf(15),
+                        LocalDateTime.of(2026, 3, 3, 9, 0));
+        Long latest =
+                insertFullInbound(
+                        1L,
+                        1L,
+                        BigDecimal.valueOf(20),
+                        BigDecimal.valueOf(20),
+                        BigDecimal.valueOf(50),
+                        BigDecimal.valueOf(20),
+                        LocalDateTime.of(2026, 3, 5, 9, 0));
+
+        List<InboundPriorApprovalDTO> result = inboundMapper.selectPriorApprovals(latest);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).getInboundId()).isEqualTo(first);
+        assertThat(result.get(0).getApprovedQty()).isEqualByComparingTo(BigDecimal.valueOf(10));
+        assertThat(result.get(1).getInboundId()).isEqualTo(second);
+        assertThat(result.get(1).getApprovedQty()).isEqualByComparingTo(BigDecimal.valueOf(15));
+    }
+
+    @Test
+    @DisplayName("다른 종목의 입고 건은 제외한다")
+    void selectPriorApprovalsExcludesDifferentProduct() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertAccount(1L, 1L, "1234567890");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        insertForeignProduct(2L, "MSFT", "Microsoft");
+        insertFullInbound(
+                1L,
+                2L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(50),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 1, 9, 0));
+        Long target =
+                insertFullInbound(
+                        1L,
+                        1L,
+                        BigDecimal.valueOf(20),
+                        BigDecimal.valueOf(20),
+                        BigDecimal.valueOf(50),
+                        BigDecimal.valueOf(20),
+                        LocalDateTime.of(2026, 3, 5, 9, 0));
+
+        List<InboundPriorApprovalDTO> result = inboundMapper.selectPriorApprovals(target);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("다른 계좌의 입고 건은 제외한다")
+    void selectPriorApprovalsExcludesDifferentAccount() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertCustomer(2L, "김철수");
+        insertAccount(1L, 1L, "1234567890");
+        insertAccount(2L, 2L, "9876543210");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        insertFullInbound(
+                2L,
+                1L,
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(50),
+                BigDecimal.valueOf(10),
+                LocalDateTime.of(2026, 3, 1, 9, 0));
+        Long target =
+                insertFullInbound(
+                        1L,
+                        1L,
+                        BigDecimal.valueOf(20),
+                        BigDecimal.valueOf(20),
+                        BigDecimal.valueOf(50),
+                        BigDecimal.valueOf(20),
+                        LocalDateTime.of(2026, 3, 5, 9, 0));
+
+        List<InboundPriorApprovalDTO> result = inboundMapper.selectPriorApprovals(target);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("과거 입고 건이 없으면 빈 목록을 반환한다")
+    void selectPriorApprovalsReturnsEmptyListWhenNoPriorApprovalsExist() throws SQLException {
+        insertCustomer(1L, "홍길동");
+        insertAccount(1L, 1L, "1234567890");
+        insertForeignProduct(1L, "AAPL", "Apple Inc.");
+        Long only =
+                insertFullInbound(
+                        1L,
+                        1L,
+                        BigDecimal.valueOf(10),
+                        BigDecimal.valueOf(10),
+                        BigDecimal.valueOf(50),
+                        BigDecimal.valueOf(10),
+                        LocalDateTime.of(2026, 3, 1, 9, 0));
+
+        List<InboundPriorApprovalDTO> result = inboundMapper.selectPriorApprovals(only);
 
         assertThat(result).isEmpty();
     }

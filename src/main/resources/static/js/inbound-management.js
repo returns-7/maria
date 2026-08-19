@@ -5,9 +5,13 @@ $(function () {
         hour: "2-digit", minute: "2-digit"
     });
 
+    var accounts = [];
+    var selectedAccountId = null;
+    var accountKeyword = "";
+    var ACCOUNT_PAGE_SIZE = 10;
+
     var inbounds = [];
-    var selectedInboundId = null;
-    var PAGE_SIZE = 20;
+    var INBOUND_PAGE_SIZE = 10;
 
     function formatDateTime(isoString) {
         if (!isoString) {
@@ -16,8 +20,41 @@ $(function () {
         return DATETIME_FORMATTER.format(new Date(isoString)).replace(/\. /g, "-").replace(".", "");
     }
 
+    var DATE_FORMATTER = new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" });
+    var TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: true });
+
+    function formatDateTwoLine(isoString) {
+        if (!isoString) {
+            return "-";
+        }
+        var date = new Date(isoString);
+        var dateStr = DATE_FORMATTER.format(date).replace(/\. /g, "-").replace(/\.$/, "");
+        var timeStr = TIME_FORMATTER.format(date);
+        return '<div>' + dateStr + '</div><div class="ib-cell-sub">' + timeStr + '</div>';
+    }
+
     function formatQty(qty) {
         return QTY_FORMATTER.format(qty || 0) + "주";
+    }
+
+    function escapeHtml(value) {
+        return $("<div>").text(value).html();
+    }
+
+    function loadSummary() {
+        MARIA.auth.ajax({ url: "/api/inbounds/summary", method: "GET" })
+            .done(function (res) {
+                var s = res.data;
+                $("#kpiTodayProcessed").text(s.todayProcessedCount + " 건");
+                $("#kpiTodayRejected").text(s.todayRejectedCount + " 건");
+                $("#kpiTodayReduced").text(s.todayReducedCount + " 건");
+                $("#kpiTodayApprovedQty").text(formatQty(s.todayApprovedQtySum));
+            })
+            .fail(function (xhr) {
+                if (xhr.status === 401) {
+                    return;
+                }
+            });
     }
 
     function formatPrice(price, currency) {
@@ -67,7 +104,7 @@ $(function () {
 
     function sellHistoryCell(sellHistory) {
         if (!sellHistory || sellHistory.length === 0) {
-            return '<span class="ib-sell-history-empty">매도 이력 없음</span>';
+            return '<span class="ib-sell-history-empty">없음</span>';
         }
         var items = sellHistory.map(function (order) {
             var label = SELL_STATUS_LABEL[order.status] || order.status;
@@ -81,50 +118,173 @@ $(function () {
         return '<ul class="ib-sell-history">' + items + '</ul>';
     }
 
-    function escapeHtml(value) {
-        return $("<div>").text(value).html();
-    }
-
-    function renderList() {
-        var $items = $("#ibListItems").empty();
-        $("#ibListCount").text(inbounds.length + "건 수신");
-        if (inbounds.length === 0) {
-            $items.append('<div class="dash-empty">입고 이력이 없습니다.</div>');
+    function renderAccountList() {
+        var $items = $("#ibAccountItems").empty();
+        $("#ibAccountCount").text(accounts.length + "개 계좌");
+        if (accounts.length === 0) {
+            $items.append('<div class="dash-empty">입고 이력이 있는 계좌가 없습니다.</div>');
             return;
         }
-        inbounds.forEach(function (item) {
-            var isSelected = item.inboundId === selectedInboundId;
+        accounts.forEach(function (acc) {
+            var isSelected = acc.accountId === selectedAccountId;
             var $row = $(
-                '<div class="ib-list-item' + (isSelected ? " selected" : "") + '">' +
+                '<div class="ib-list-item ib-account-item' + (isSelected ? " selected" : "") + '">' +
                 '<div class="ib-list-item-top">' +
-                '<span class="ib-list-item-name">' + escapeHtml(item.customerName) + '</span>' +
-                '<span class="ib-list-item-ticker">[' + escapeHtml(item.ticker || item.productName) + ']</span>' +
+                '<span class="ib-list-item-name">' + escapeHtml(acc.customerName) + '</span>' +
+                '<span class="ib-list-item-ticker">' + escapeHtml(acc.accountNo || "-") + '</span>' +
                 '</div>' +
                 '<div class="ib-list-item-bottom">' +
-                '<span>계좌 ' + escapeHtml(item.accountNo || "-") + ' · ' + formatDateTime(item.processedAt) + '</span>' +
-                (item.approvedQty === 0
-                    ? '<span class="status-badge failed">한도초과 · 0주 승인</span>'
-                    : '<span>승인수량: <strong>' + formatQty(item.approvedQty) + '</strong></span>') +
+                '<span>입고 ' + acc.inboundCount + '건</span>' +
+                '<span>최근 처리: ' + formatDateTime(acc.lastProcessedAt) + '</span>' +
                 '</div>' +
                 '</div>'
             );
             $row.on("click", function () {
-                selectedInboundId = item.inboundId;
-                renderList();
-                renderDetail(item);
+                selectedAccountId = acc.accountId;
+                renderAccountList();
+                loadAccountInbounds(0);
             });
             $items.append($row);
         });
     }
 
-    function renderPagination(page) {
-        var $pagination = $("#ibPagination").empty();
-        if (!page || page.totalPages <= 1) {
+    function renderAccountPagination(page) {
+        renderPaginationInto($("#ibAccountPagination"), page.page, page.totalPages, function (targetPage) {
+            loadAccounts(targetPage);
+        });
+    }
+
+    function loadAccounts(page) {
+        var targetPage = page || 0;
+        var requestData = { page: targetPage, size: ACCOUNT_PAGE_SIZE };
+        if (accountKeyword) {
+            requestData.keyword = accountKeyword;
+        }
+        MARIA.auth.ajax({
+            url: "/api/inbounds/accounts",
+            method: "GET",
+            data: requestData
+        })
+            .done(function (res) {
+                accounts = res.data.content || [];
+                var totalPages = Math.ceil((res.data.totalCount || 0) / ACCOUNT_PAGE_SIZE);
+                renderAccountList();
+                renderAccountPagination({ page: res.data.page, totalPages: totalPages });
+
+                if (accounts.length > 0) {
+                    selectedAccountId = accounts[0].accountId;
+                    renderAccountList();
+                    loadAccountInbounds(0);
+                } else {
+                    selectedAccountId = null;
+                    inbounds = [];
+                    renderInboundList();
+                    $("#ibInboundPagination").empty();
+                }
+                $("#ibLoading").hide();
+                $("#ibBody").show();
+            })
+            .fail(function (xhr) {
+                if (xhr.status === 401) {
+                    return;
+                }
+                $("#ibLoading").hide();
+                var message = "계좌 목록을 불러오지 못했습니다.";
+                if (xhr.responseJSON && xhr.responseJSON.message) {
+                    message = xhr.responseJSON.message;
+                }
+                $("#ibError").text(message).show();
+            });
+    }
+
+    function renderInboundList() {
+        var $items = $("#ibInboundItems").empty();
+        $("#ibInboundCount").text(inbounds.length + "건");
+        if (!selectedAccountId) {
+            $items.append('<div class="dash-empty">왼쪽에서 계좌를 선택하세요.</div>');
+            return;
+        }
+        if (inbounds.length === 0) {
+            $items.append('<div class="dash-empty">이 계좌의 입고 내역이 없습니다.</div>');
             return;
         }
 
-        var current = page.page;
-        var totalPages = page.totalPages;
+        var rows = inbounds.map(function (item) {
+            return (
+                '<tr class="ib-inbound-row" data-inbound-id="' + item.inboundId + '">' +
+                '<td>' + escapeHtml(item.ticker || "-") + '<br><span class="ib-cell-sub">' + escapeHtml(item.productName || "-") + '</span></td>' +
+                '<td>' + formatQty(item.requestedQty) + '</td>' +
+                '<td>' + formatQty(item.snapshotQty) + '</td>' +
+                '<td>' + formatQty(item.currentHoldingAtRequest) + '</td>' +
+                '<td>' + (item.approvedQty === 0
+                    ? '<span class="status-badge failed">0주 승인</span>'
+                    : formatQty(item.approvedQty)) + '</td>' +
+                '<td>' + formatQty(item.remainingQty) + '</td>' +
+                '<td>' + (item.sourceBroker ? escapeHtml(item.sourceBroker) : "당사") + '</td>' +
+                '<td>' + formatDateTime(item.processedAt) + '</td>' +
+                '</tr>'
+            );
+        }).join("");
+
+        var $table = $(
+            '<table class="dash-table ib-inbound-table">' +
+            '<thead><tr>' +
+            '<th>종목</th><th>신청수량</th><th>기준일수량</th><th>현재보유수량</th>' +
+            '<th>승인수량</th><th>잔여가능수량</th><th>출처</th><th>처리일시</th>' +
+            '</tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+            '</table>'
+        );
+        $items.append($table);
+
+        $table.find("tbody tr").on("click", function () {
+            var inboundId = Number($(this).data("inbound-id"));
+            var item = inbounds.filter(function (i) { return i.inboundId === inboundId; })[0];
+            if (item) {
+                openDetailOverlay(item);
+            }
+        });
+    }
+
+        function renderInboundPagination(page) {
+        renderPaginationInto($("#ibInboundPagination"), page.page, page.totalPages, function (targetPage) {
+            loadAccountInbounds(targetPage);
+        });
+    }
+
+    function loadAccountInbounds(page) {
+        if (!selectedAccountId) {
+            return;
+        }
+        var targetPage = page || 0;
+        MARIA.auth.ajax({
+            url: "/api/inbounds/by-account/" + selectedAccountId,
+            method: "GET",
+            data: { page: targetPage, size: INBOUND_PAGE_SIZE }
+        })
+            .done(function (res) {
+                inbounds = res.data.content || [];
+                renderInboundList();
+                renderInboundPagination(res.data);
+            })
+            .fail(function (xhr) {
+                if (xhr.status === 401) {
+                    return;
+                }
+                var message = "입고 내역을 불러오지 못했습니다.";
+                if (xhr.responseJSON && xhr.responseJSON.message) {
+                    message = xhr.responseJSON.message;
+                }
+                $("#ibError").text(message).show();
+            });
+    }
+
+    function renderPaginationInto($pagination, current, totalPages, onClick) {
+        $pagination.empty();
+        if (!totalPages || totalPages <= 1) {
+            return;
+        }
+
         var BLOCK_SIZE = 10;
         var blockStart = Math.floor(current / BLOCK_SIZE) * BLOCK_SIZE;
         var blockEnd = Math.min(totalPages - 1, blockStart + BLOCK_SIZE - 1);
@@ -135,18 +295,16 @@ $(function () {
             $btn.prop("disabled", isDisabled || isActive);
             if (!isDisabled && !isActive) {
                 $btn.on("click", function () {
-                    loadInbounds(targetPage);
+                    onClick(targetPage);
                 });
             }
             $pagination.append($btn);
         }
 
         addButton("이전", blockStart - 1, blockStart === 0, false);
-
         for (var i = blockStart; i <= blockEnd; i++) {
             addButton(String(i + 1), i, false, i === current);
         }
-
         addButton("다음", blockEnd + 1, blockEnd === totalPages - 1, false);
     }
 
@@ -172,8 +330,43 @@ $(function () {
         return "이 계좌·종목으로 이미 승인된 누적수량이 12.23 기준수량을 다 채웠습니다.";
     }
 
-    function renderDetail(item) {
-        var $detail = $("#ibDetail").empty();
+    function loadPriorApprovals(inboundId, $container) {
+        $container.append('<div class="section-header"><span>이 계좌·종목 기존 승인 내역</span></div>');
+        MARIA.auth.ajax({ url: "/api/inbounds/" + inboundId + "/prior-approvals", method: "GET" })
+            .done(function (res) {
+                var rows = res.data || [];
+                if (rows.length === 0) {
+                    $container.append('<div class="dash-empty">기존 승인 내역이 없습니다.</div>');
+                    return;
+                }
+                var trs = rows.map(function (r) {
+                    return (
+                        '<tr>' +
+                        '<td>' + formatDateTime(r.processedAt) + '</td>' +
+                        '<td>' + formatQty(r.requestedQty) + '</td>' +
+                        '<td>' + formatQty(r.approvedQty) + '</td>' +
+                        '</tr>'
+                    );
+                }).join("");
+                $container.append(
+                    '<table class="dash-table ib-info-table">' +
+                    '<thead><tr><th>처리일시</th><th>신청수량</th><th>승인수량</th></tr></thead>' +
+                    '<tbody>' + trs + '</tbody>' +
+                    '</table>'
+                );
+            })
+            .fail(function (xhr) {
+                if (xhr.status === 401) {
+                    return;
+                }
+                $container.append('<div class="dash-empty">기존 승인 내역을 불러오지 못했습니다.</div>');
+            });
+    }
+
+    function openDetailOverlay(item) {
+        var $body = $("#ibOverlayBody").empty();
+        var $detail = $('<div class="ib-detail-card"></div>');
+        $body.append($detail);
 
         var isZeroApproved = item.approvedQty === 0;
         var availableQty = item.remainingQty + item.approvedQty;
@@ -190,7 +383,7 @@ $(function () {
         $detail.append(
             '<div class="ib-min-grid">' +
             minCard("1. 신청수량", item.requestedQty, item.requestedQty === item.approvedQty, "고객 입고 신청 수량") +
-            minCard("2. 가용수량(기준수량 - 기승인)", availableQty, availableQty === item.approvedQty, "12.23 기준수량 " + formatQty(item.snapshotQty) + " 중 이미 승인된 수량 차감") +
+            minCard("2. 가용수량(기준수량 - 기승인)", availableQty, availableQty === item.approvedQty, "12.23 기준수량 " + formatQty(item.snapshotQty) + " 중<br>이미 승인된 수량 차감") +
             minCard("3. 현재보유수량", item.currentHoldingAtRequest, item.currentHoldingAtRequest === item.approvedQty, "요청시점 실보유수량") +
             '</div>'
         );
@@ -202,16 +395,38 @@ $(function () {
             '</div>'
         );
 
+        var alreadyApprovedQty = item.snapshotQty - availableQty;
         $detail.append(
-            '<div class="ib-min-info">' +
-            '<span>계좌: ' + escapeHtml(item.accountNo || "-") + '</span>' +
-            '<span>고객: ' + escapeHtml(item.customerName) + '</span>' +
-            '<span>종목: ' + escapeHtml(item.ticker || "-") + ' (' + escapeHtml(item.productName || "-") +
-            ')</span>' +
-            (item.sourceBroker ? '<span>출처: ' + escapeHtml(item.sourceBroker) + '</span>' : "") +
-            '<span>처리일시: ' + formatDateTime(item.processedAt) + '</span>' +
-            '<span>잔여 가능 수량: <strong>' + formatQty(item.remainingQty) + '</strong></span>' +
-            '</div>'
+            '<div class="section-header"><span>3-way MIN 근거 — 가용수량 분해</span></div>' +
+            '<table class="dash-table ib-info-table">' +
+            '<thead><tr><th>항목</th><th>수량</th></tr></thead>' +
+            '<tbody>' +
+            '<tr><td>12.23 기준수량 (한도)</td><td>' + formatQty(item.snapshotQty) + '</td></tr>' +
+            '<tr><td>이 계좌·종목 기존 승인 누적</td><td>' + formatQty(alreadyApprovedQty) + '</td></tr>' +
+            '<tr><td><strong>가용수량 (기준수량 − 기존승인)</strong></td><td><strong>' + formatQty(availableQty) + '</strong></td></tr>' +
+            '</tbody>' +
+            '</table>'
+        );
+
+        var $priorSection = $('<div></div>');
+        $detail.append($priorSection);
+        loadPriorApprovals(item.inboundId, $priorSection);
+
+        $detail.append(
+            '<div class="section-header"><span>기본 정보</span></div>' +
+            '<table class="dash-table ib-info-table">' +
+            '<thead><tr>' +
+            '<th>계좌번호</th><th>고객명</th><th>종목</th><th>출처</th><th>처리일시</th><th>잔여가능수량</th>' +
+            '</tr></thead>' +
+            '<tbody><tr>' +
+            '<td>' + escapeHtml(item.accountNo || "-") + '</td>' +
+            '<td>' + escapeHtml(item.customerName) + '</td>' +
+            '<td>' + escapeHtml(item.ticker || "-") + ' (' + escapeHtml(item.productName || "-") + ')</td>' +
+            '<td>' + (item.sourceBroker ? escapeHtml(item.sourceBroker) : "-") + '</td>' +
+            '<td>' + formatDateTime(item.processedAt) + '</td>' +
+            '<td><strong>' + formatQty(item.remainingQty) + '</strong></td>' +
+            '</tr></tbody>' +
+            '</table>'
         );
 
         if (item.lots && item.lots.length > 0) {
@@ -219,10 +434,9 @@ $(function () {
                 return (
                     '<tr>' +
                     '<td>' + sourceLabel(lot) + '</td>' +
-                    '<td>' + formatDateTime(lot.purchaseDate) + '</td>' +
-                    '<td>' + formatDateTime(lot.recordedAt) + '</td>' +
-
-                    '<td>' + formatPrice(lot.purchasePrice, lot.purchaseCurrency) + '</td>' +
+                    '<td>' + formatDateTwoLine(lot.purchaseDate) + '</td>' +
+                    '<td>' + formatDateTwoLine(lot.recordedAt) + '</td>' +
+                    '<td class="ib-price-cell">' + formatPrice(lot.purchasePrice, lot.purchaseCurrency) + '</td>' +
                     '<td>' + lotProgressCell(lot) + '</td>' +
                     '<td>' + sellHistoryCell(lot.sellHistory) + '</td>' +
                     '</tr>'
@@ -240,42 +454,41 @@ $(function () {
                 '</table>'
             );
         }
+
+        $("#ibOverlayBackdrop").show();
+        $("#ibOverlayPanel").show();
     }
 
-    function loadInbounds(page) {
-        var targetPage = page || 0;
-        MARIA.auth.ajax({
-            url: "/api/inbounds",
-            method: "GET",
-            data: { page: targetPage, size: PAGE_SIZE }
-        })
-            .done(function (res) {
-                inbounds = res.data.content || [];
-                selectedInboundId = null;
-                renderList();
-                renderPagination(res.data);
-                if (inbounds.length > 0) {
-                    selectedInboundId = inbounds[0].inboundId;
-                    renderList();
-                    renderDetail(inbounds[0]);
-                } else {
-                    $("#ibDetail").empty().append('<div class="dash-empty">왼쪽에서 입고 건을 선택하세요.</div>');
-                }
-                $("#ibLoading").hide();
-                $("#ibBody").show();
-            })
-            .fail(function (xhr) {
-                if (xhr.status === 401) {
-                    return;
-                }
-                $("#ibLoading").hide();
-                var message = "목록을 불러오지 못했습니다.";
-                if (xhr.responseJSON && xhr.responseJSON.message) {
-                    message = xhr.responseJSON.message;
-                }
-                $("#ibError").text(message).show();
-            });
+    function closeDetailOverlay() {
+        $("#ibOverlayBackdrop").hide();
+        $("#ibOverlayPanel").hide();
     }
 
-    loadInbounds(0);
+    $("#ibOverlayClose").on("click", closeDetailOverlay);
+    $("#ibOverlayBackdrop").on("click", closeDetailOverlay);
+    $(document).on("keydown", function (e) {
+        if (e.key === "Escape") {
+            closeDetailOverlay();
+        }
+    });
+
+    $("#ibAccountSearchSubmit").on("click", function () {
+        accountKeyword = $("#ibAccountSearch").val().trim();
+        loadAccounts(0);
+    });
+    $("#ibAccountSearchReset").on("click", function () {
+        accountKeyword = "";
+        $("#ibAccountSearch").val("");
+        loadAccounts(0);
+    });
+    $("#ibAccountSearch").on("keypress", function (e) {
+        if (e.which === 13) {
+            accountKeyword = $(this).val().trim();
+            loadAccounts(0);
+        }
+    });
+
+    loadSummary();
+    loadAccounts(0);
 });
+

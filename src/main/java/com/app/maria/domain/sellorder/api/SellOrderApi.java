@@ -1,9 +1,11 @@
 package com.app.maria.domain.sellorder.api;
 
 import com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderSummaryDTO;
 import com.app.maria.domain.sellorder.dto.request.SellOrderRequestDTO;
 import com.app.maria.domain.sellorder.dto.response.SellOrderHistoryResponseDTO;
 import com.app.maria.domain.sellorder.dto.response.SellOrderResponseDTO;
+import com.app.maria.domain.sellorder.dto.response.SellOrderSummaryResponseDTO;
 import com.app.maria.domain.sellorder.service.SellOrderService;
 import com.app.maria.domain.sellorder.type.SellOrderStatus;
 import com.app.maria.global.response.ApiResponseDTO;
@@ -62,6 +64,13 @@ public class SellOrderApi {
             @RequestParam Long accountId) {
         List<SellOrderResponseDTO> list = sellOrderService.getSellOrderByAccount(accountId);
         return ResponseEntity.ok(ApiResponseDTO.of("계좌 매도 주문 조회에 성공하였습니다.", list));
+    }
+
+    @GetMapping("/summary")
+    public ResponseEntity<ApiResponseDTO<SellOrderSummaryResponseDTO>> getSellOrderSummary() {
+        SellOrderSummaryDTO summary = sellOrderService.getSellOrderSummary();
+        return ResponseEntity.ok(
+                ApiResponseDTO.of("매도 · 환전 요약 조회 성공", new SellOrderSummaryResponseDTO(summary)));
     }
 
     @GetMapping("/history")

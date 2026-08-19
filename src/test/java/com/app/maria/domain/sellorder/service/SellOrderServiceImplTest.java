@@ -13,6 +13,7 @@ import com.app.maria.domain.inbound.dto.InboundDetailDTO;
 import com.app.maria.domain.inbound.mapper.InboundMapper;
 import com.app.maria.domain.sellorder.dto.SellOrderDTO;
 import com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderSummaryDTO;
 import com.app.maria.domain.sellorder.dto.request.SellOrderRequestDTO;
 import com.app.maria.domain.sellorder.dto.response.SellOrderResponseDTO;
 import com.app.maria.domain.sellorder.exception.SellOrderException;
@@ -20,6 +21,7 @@ import com.app.maria.domain.sellorder.exception.SellOrderNotFoundException;
 import com.app.maria.domain.sellorder.mapper.SellOrderMapper;
 import com.app.maria.domain.sellorder.type.SellOrderStatus;
 import com.app.maria.domain.settlement.service.ProvisionalExchangeService;
+import com.app.maria.domain.settlement.service.SettlementService;
 import com.app.maria.global.audit.dto.AuditLogDTO;
 import com.app.maria.global.audit.service.AuditLogService;
 import com.app.maria.global.client.exchange.ExchangeRateClient;
@@ -63,6 +65,8 @@ class SellOrderServiceImplTest {
     @Mock AuditLogService auditLogService;
 
     @Mock ProvisionalExchangeService provisionalExchangeService;
+
+    @Mock SettlementService settlementService;
 
     @InjectMocks SellOrderServiceImpl sellOrderService;
 
@@ -471,5 +475,67 @@ class SellOrderServiceImplTest {
 
         assertThat(result.getContent()).isEmpty();
         assertThat(result.getTotalCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("오늘 매도금액/체결건수는 전일 대비 증감률과 함께 계산된다")
+    void getSellOrderSummaryComputesChangeRatesAgainstYesterday() {
+        LocalDate today = NOW.toLocalDate();
+        LocalDate yesterday = today.minusDays(1);
+        when(businessClockService.now()).thenReturn(NOW);
+
+        when(sellOrderMapper.sumSellAmountBetween(
+                        today.atStartOfDay(), today.plusDays(1).atStartOfDay()))
+                .thenReturn(new BigDecimal("1100000"));
+        when(sellOrderMapper.sumSellAmountBetween(yesterday.atStartOfDay(), today.atStartOfDay()))
+                .thenReturn(new BigDecimal("1000000"));
+        when(sellOrderMapper.countSellOrderHistory(
+                        null, "EXECUTED", today.atStartOfDay(), today.atTime(23, 59, 59)))
+                .thenReturn(5);
+        when(sellOrderMapper.countSellOrderHistory(
+                        null, "EXECUTED", yesterday.atStartOfDay(), yesterday.atTime(23, 59, 59)))
+                .thenReturn(10);
+        when(settlementService.getPendingProvisionalAmount()).thenReturn(new BigDecimal("2900000"));
+        when(settlementService.getFinalizedAmountBetween(
+                        today.atStartOfDay(), today.plusDays(1).atStartOfDay()))
+                .thenReturn(new BigDecimal("110000"));
+
+        SellOrderSummaryDTO summary = sellOrderService.getSellOrderSummary();
+
+        assertThat(summary.getTodaySellAmount()).isEqualByComparingTo("1100000");
+        assertThat(summary.getTodaySellAmountChangeRate()).isEqualByComparingTo("10.0");
+        assertThat(summary.getTodayExecutedCount()).isEqualTo(5);
+        assertThat(summary.getTodayExecutedCountChangeRate()).isEqualByComparingTo("-50.0");
+        assertThat(summary.getPendingProvisionalAmount()).isEqualByComparingTo("2900000");
+        assertThat(summary.getTodayFinalizedAmount()).isEqualByComparingTo("110000");
+    }
+
+    @Test
+    @DisplayName("전일 값이 0이면 증감률은 null이다")
+    void getSellOrderSummaryReturnsNullChangeRateWhenYesterdayIsZero() {
+        LocalDate today = NOW.toLocalDate();
+        LocalDate yesterday = today.minusDays(1);
+        when(businessClockService.now()).thenReturn(NOW);
+
+        when(sellOrderMapper.sumSellAmountBetween(
+                        today.atStartOfDay(), today.plusDays(1).atStartOfDay()))
+                .thenReturn(new BigDecimal("500000"));
+        when(sellOrderMapper.sumSellAmountBetween(yesterday.atStartOfDay(), today.atStartOfDay()))
+                .thenReturn(BigDecimal.ZERO);
+        when(sellOrderMapper.countSellOrderHistory(
+                        null, "EXECUTED", today.atStartOfDay(), today.atTime(23, 59, 59)))
+                .thenReturn(3);
+        when(sellOrderMapper.countSellOrderHistory(
+                        null, "EXECUTED", yesterday.atStartOfDay(), yesterday.atTime(23, 59, 59)))
+                .thenReturn(0);
+        when(settlementService.getPendingProvisionalAmount()).thenReturn(BigDecimal.ZERO);
+        when(settlementService.getFinalizedAmountBetween(
+                        today.atStartOfDay(), today.plusDays(1).atStartOfDay()))
+                .thenReturn(BigDecimal.ZERO);
+
+        SellOrderSummaryDTO summary = sellOrderService.getSellOrderSummary();
+
+        assertThat(summary.getTodaySellAmountChangeRate()).isNull();
+        assertThat(summary.getTodayExecutedCountChangeRate()).isNull();
     }
 }

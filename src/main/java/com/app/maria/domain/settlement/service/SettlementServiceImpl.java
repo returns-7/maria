@@ -379,4 +379,16 @@ public class SettlementServiceImpl implements SettlementService {
     public int getProvisionalExchangeCount() {
         return krwExchangeMapper.countByStatus(SettlementStatus.PROVISIONAL);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal getPendingProvisionalAmount() {
+        return krwExchangeMapper.sumProvisionalAmountByStatus(SettlementStatus.PROVISIONAL);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal getFinalizedAmountBetween(LocalDateTime start, LocalDateTime end) {
+        return krwExchangeMapper.sumFinalizedAmountBetween(start, end);
+    }
 }

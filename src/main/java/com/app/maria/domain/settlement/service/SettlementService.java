@@ -4,6 +4,8 @@ import com.app.maria.domain.settlement.dto.KrwExchangeDTO;
 import com.app.maria.domain.settlement.dto.SettlementBatchDTO;
 import com.app.maria.domain.settlement.dto.SettlementItemDTO;
 import com.app.maria.domain.settlement.dto.SettlementJoinDTO;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface SettlementService {
@@ -33,4 +35,8 @@ public interface SettlementService {
     KrwExchangeDTO getKrwExchange(Long exchangeId);
 
     int getProvisionalExchangeCount();
+
+    BigDecimal getPendingProvisionalAmount();
+
+    BigDecimal getFinalizedAmountBetween(LocalDateTime start, LocalDateTime end);
 }

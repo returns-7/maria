@@ -238,7 +238,8 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
     gap: 6px;
     padding: 14px 0 4px;
 }
@@ -305,5 +306,83 @@
 .filter-select:focus {
     outline: none;
     border-color: var(--accent);
+}
+
+.dash-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.dash-stat-filter-bar {
+    flex-wrap: nowrap;
+}
+
+.dash-stat-filter-input {
+    flex: none;
+    width: 160px;
+}
+
+.dash-stat-filter-keyword {
+    flex: none;
+    width: 220px;
+}
+
+.dash-stat-filter-date {
+    flex: none;
+    width: 150px;
+}
+
+.dash-stat-filter-date-separator {
+    color: var(--textMuted);
+}
+
+.dash-stat-filter-bar #statFilterSearch {
+    margin-left: auto;
+}
+
+.dash-stat-error {
+    margin: 0;
+    color: var(--danger);
+    font: 400 12px 'Noto Sans KR', sans-serif;
+}
+
+.dash-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+.dash-stat-card {
+    padding: 0 0 14px;
+    display: flex;
+    flex-direction: column;
+}
+
+.dash-stat-card-wide {
+    grid-column: span 3;
+}
+
+.dash-stat-chart-wrap {
+    position: relative;
+    height: 280px;
+    padding: 16px;
+}
+
+.dash-stat-empty {
+    text-align: center;
+    color: var(--textMuted);
+    font: 400 12px 'Noto Sans KR', sans-serif;
+    padding: 0 14px 14px;
+}
+
+@media (max-width: 960px) {
+    .dash-stat-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dash-stat-card-wide {
+        grid-column: span 1;
+    }
 }
 
