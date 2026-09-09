@@ -175,7 +175,7 @@ $(function () {
 
     function loadAccountReviewCount() {
         MARIA.auth.ajax({
-            url: "/api/account/requiring-action-count",
+            url: "/api/admin/account/requiring-action-count",
             method: "GET"
         }).done(function (res) {
             var count = res.data || 0;

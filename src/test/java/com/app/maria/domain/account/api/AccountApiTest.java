@@ -90,7 +90,7 @@ class AccountApiTest {
         when(accountService.applyAccount(any(AccountRequestDTO.class))).thenReturn(response);
 
         mockMvc.perform(
-                        post("/api/account/applications")
+                        post("/api/admin/account/applications")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
@@ -109,7 +109,7 @@ class AccountApiTest {
     void getAccountsRequiringActionCountReturnsCount() throws Exception {
         when(accountService.getAccountsRequiringActionCount()).thenReturn(3);
 
-        mockMvc.perform(get("/api/account/requiring-action-count"))
+        mockMvc.perform(get("/api/admin/account/requiring-action-count"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("처리 필요 계좌 건수 조회"))
                 .andExpect(jsonPath("$.data").value(3));
@@ -129,7 +129,7 @@ class AccountApiTest {
                         .build();
         when(accountService.getAccountByAccountId(1L)).thenReturn(response);
 
-        mockMvc.perform(get("/api/account/{accountId}", 1L))
+        mockMvc.perform(get("/api/admin/account/{accountId}", 1L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("계좌 조회"))
                 .andExpect(jsonPath("$.data.accountId").value(1L))
@@ -141,7 +141,7 @@ class AccountApiTest {
     @Test
     void applyRejectsMissingCustomerId() throws Exception {
         mockMvc.perform(
-                        post("/api/account/applications")
+                        post("/api/admin/account/applications")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
@@ -158,7 +158,7 @@ class AccountApiTest {
     @Test
     void applyRejectsNonPositiveCustomerId() throws Exception {
         mockMvc.perform(
-                        post("/api/account/applications")
+                        post("/api/admin/account/applications")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
@@ -177,7 +177,7 @@ class AccountApiTest {
     @ValueSource(strings = {"0", "50000001", "1.5"})
     void applyRejectsInvalidLimit(String limitAmount) throws Exception {
         mockMvc.perform(
-                        post("/api/account/applications")
+                        post("/api/admin/account/applications")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
@@ -195,7 +195,7 @@ class AccountApiTest {
     @Test
     void applyRejectsMissingLimit() throws Exception {
         mockMvc.perform(
-                        post("/api/account/applications")
+                        post("/api/admin/account/applications")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
@@ -212,7 +212,7 @@ class AccountApiTest {
     @Test
     void updateLimitRequiresExpectedCurrentLimit() throws Exception {
         mockMvc.perform(
-                        put("/api/account/update/limit")
+                        put("/api/admin/account/update/limit")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
@@ -229,7 +229,7 @@ class AccountApiTest {
 
     @Test
     void getAvailableLimitRejectsNonPositiveCustomerId() throws Exception {
-        mockMvc.perform(get("/api/account/available-limit").param("customerId", "0"))
+        mockMvc.perform(get("/api/admin/account/available-limit").param("customerId", "0"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("사용자 ID는 0보다 커야 합니다."));
 
@@ -238,7 +238,7 @@ class AccountApiTest {
 
     @Test
     void approveRejectsNonPositiveAccountId() throws Exception {
-        mockMvc.perform(post("/api/account/0/approve"))
+        mockMvc.perform(post("/api/admin/account/0/approve"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("계좌 ID는 0보다 커야 합니다."));
 
@@ -248,7 +248,7 @@ class AccountApiTest {
     @Test
     void rejectRejectsBlankReason() throws Exception {
         mockMvc.perform(
-                        post("/api/account/1/reject")
+                        post("/api/admin/account/1/reject")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
@@ -267,7 +267,7 @@ class AccountApiTest {
         String reason = "a".repeat(201);
 
         mockMvc.perform(
-                        post("/api/account/1/reject")
+                        post("/api/admin/account/1/reject")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
@@ -290,7 +290,7 @@ class AccountApiTest {
                 .thenReturn(response);
 
         mockMvc.perform(
-                        post("/api/account/1/reapply")
+                        post("/api/admin/account/1/reapply")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
@@ -313,7 +313,7 @@ class AccountApiTest {
                 .thenReturn(response);
 
         mockMvc.perform(
-                        post("/api/account/1/reapply")
+                        post("/api/admin/account/1/reapply")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{}"))
                 .andExpect(status().isOk())
@@ -327,7 +327,7 @@ class AccountApiTest {
     @ValueSource(strings = {"0", "50000001", "1.5"})
     void reapplyRejectsInvalidLimit(String limitAmount) throws Exception {
         mockMvc.perform(
-                        post("/api/account/1/reapply")
+                        post("/api/admin/account/1/reapply")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
@@ -345,7 +345,7 @@ class AccountApiTest {
     @Test
     void overrideRejectsBlankReason() throws Exception {
         mockMvc.perform(
-                        post("/api/account/1/override")
+                        post("/api/admin/account/1/override")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
@@ -372,7 +372,7 @@ class AccountApiTest {
                         .build();
         when(accountService.searchAccounts(any())).thenReturn(List.of(response));
 
-        mockMvc.perform(get("/api/account/search").param("accountNo", "1234"))
+        mockMvc.perform(get("/api/admin/account/search").param("accountNo", "1234"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("계좌 검색"))
                 .andExpect(jsonPath("$.data[0].accountNo").value("1234567890"))
@@ -383,7 +383,7 @@ class AccountApiTest {
 
     @Test
     void searchRejectsRequestWithoutAccountNoOrCustomerName() throws Exception {
-        mockMvc.perform(get("/api/account/search")).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/admin/account/search")).andExpect(status().isBadRequest());
 
         verify(accountService, never()).searchAccounts(any());
     }

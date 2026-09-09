@@ -29,7 +29,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequiredArgsConstructor
 @Validated
-@RequestMapping("/api/sell-orders")
+@RequestMapping("/api/admin/sell-orders")
 public class SellOrderApi {
 
     private final SellOrderService sellOrderService;
