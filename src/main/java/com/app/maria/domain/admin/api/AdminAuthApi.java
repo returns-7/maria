@@ -1,12 +1,16 @@
 package com.app.maria.domain.admin.api;
 
 import com.app.maria.domain.admin.dto.request.AdminLoginRequestDTO;
-import com.app.maria.domain.admin.dto.request.AdminRefreshRequestDTO;
 import com.app.maria.domain.admin.dto.response.AdminLoginResponseDTO;
+import com.app.maria.domain.admin.exception.AdminException;
 import com.app.maria.domain.admin.service.AdminService;
+import com.app.maria.global.config.properties.CookieProperties;
+import com.app.maria.global.config.properties.JwtProperties;
 import com.app.maria.global.response.ApiResponseDTO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,26 +20,63 @@ import org.springframework.web.bind.annotation.*;
 public class AdminAuthApi {
 
     private final AdminService adminService;
+    private final JwtProperties jwtProperties;
+    private final CookieProperties cookieProperties;
 
     @PostMapping("/login")
-    public ResponseEntity<ApiResponseDTO<AdminLoginResponseDTO>> login(
+    public ResponseEntity<ApiResponseDTO<Void>> login(
             @Valid @RequestBody AdminLoginRequestDTO request) {
-        // ponytail: body 반환 유지 — Task 3에서 HttpOnly 쿠키로 전환
-        AdminLoginResponseDTO response = adminService.login(request);
-        return ResponseEntity.ok(ApiResponseDTO.of("로그인 성공", response));
+        AdminLoginResponseDTO tokens = adminService.login(request);
+        return tokenCookieResponse("로그인 성공", tokens);
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<ApiResponseDTO<AdminLoginResponseDTO>> refresh(
-            @Valid @RequestBody AdminRefreshRequestDTO request) {
-        // ponytail: @RequestBody — Task 3에서 @CookieValue로 전환
-        AdminLoginResponseDTO response = adminService.refresh(request.getRefreshToken());
-        return ResponseEntity.ok(ApiResponseDTO.of("토큰이 재발급되었습니다.", response));
+    public ResponseEntity<ApiResponseDTO<Void>> refresh(
+            @CookieValue(name = "refresh_token", required = false) String refreshToken) {
+        if (refreshToken == null) {
+            throw new AdminException("refresh_token 쿠키가 없습니다.");
+        }
+        AdminLoginResponseDTO tokens = adminService.refresh(refreshToken);
+        return tokenCookieResponse("토큰이 재발급되었습니다.", tokens);
     }
 
     @PostMapping("/logout")
     public ResponseEntity<ApiResponseDTO<Void>> logout() {
-        // ponytail: 쿠키 만료 처리는 Task 3에서 추가
-        return ResponseEntity.ok(ApiResponseDTO.of("로그아웃되었습니다."));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, expireCookie("access_token").toString())
+                .header(HttpHeaders.SET_COOKIE, expireCookie("refresh_token").toString())
+                .body(ApiResponseDTO.of("로그아웃되었습니다."));
+    }
+
+    private ResponseEntity<ApiResponseDTO<Void>> tokenCookieResponse(
+            String message, AdminLoginResponseDTO tokens) {
+        ResponseCookie accessCookie = buildCookie("access_token", tokens.getAccessToken(),
+                (int) (jwtProperties.getExpirationMinute() * 60));
+        ResponseCookie refreshCookie = buildCookie("refresh_token", tokens.getRefreshToken(),
+                (int) (jwtProperties.getRefreshExpirationDay() * 24 * 60 * 60));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, accessCookie.toString())
+                .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
+                .body(ApiResponseDTO.of(message));
+    }
+
+    private ResponseCookie buildCookie(String name, String value, int maxAgeSeconds) {
+        return ResponseCookie.from(name, value)
+                .httpOnly(true)
+                .secure(cookieProperties.isSecure())
+                .sameSite("Strict")
+                .path("/")
+                .maxAge(maxAgeSeconds)
+                .build();
+    }
+
+    private ResponseCookie expireCookie(String name) {
+        return ResponseCookie.from(name, "")
+                .httpOnly(true)
+                .secure(cookieProperties.isSecure())
+                .sameSite("Strict")
+                .path("/")
+                .maxAge(0)
+                .build();
     }
 }
