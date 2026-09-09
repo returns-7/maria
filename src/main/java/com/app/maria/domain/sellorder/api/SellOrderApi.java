@@ -30,11 +30,12 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 @Validated
 @RequestMapping("/api/admin/sell-orders")
+@PreAuthorize("hasAnyRole('ADMIN','REVIEWER','SETTLEMENT','VIEWER')")
 public class SellOrderApi {
 
     private final SellOrderService sellOrderService;
 
-    @PreAuthorize("hasAnyRole('SETTLEMENT', 'ADMIN')")
+    @PreAuthorize("hasRole('SETTLEMENT')")
     @PostMapping
     public ResponseEntity<ApiResponseDTO<List<SellOrderResponseDTO>>> placeSellOrder(
             @AuthenticationPrincipal Long actorAdminId,

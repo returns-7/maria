@@ -491,4 +491,48 @@ class SellOrderApiTest {
     void getSellOrderSummaryReturns401WhenNotAuthenticated() throws Exception {
         mockMvc.perform(get("/api/admin/sell-orders/summary")).andExpect(status().isUnauthorized());
     }
+
+    @Test
+    @DisplayName("ADMIN이 매도 주문을 하면 403을 반환한다")
+    @WithMockUser(roles = "ADMIN")
+    void placeSellOrderReturns403WhenCallerIsAdmin() throws Exception {
+        SellOrderRequestDTO request = validRequestBuilder().build();
+
+        mockMvc.perform(
+                        post("/api/admin/sell-orders")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
+
+        verify(sellOrderService, never()).placeSellOrder(any(), any());
+    }
+
+    @Test
+    @DisplayName("SETTLEMENT이 매도 주문을 하면 성공한다")
+    @WithMockUser(username = "1", roles = "SETTLEMENT")
+    void placeSellOrderReturns201WhenCallerIsSettlement() throws Exception {
+        SellOrderResponseDTO response =
+                SellOrderResponseDTO.builder()
+                        .orderId(100L)
+                        .status(SellOrderStatus.EXECUTED)
+                        .build();
+        when(sellOrderService.placeSellOrder(any(), any())).thenReturn(List.of(response));
+
+        mockMvc.perform(
+                        post("/api/admin/sell-orders")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(validRequestBuilder().build())))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("VIEWER가 매도 이력을 조회하면 성공한다")
+    @WithMockUser(roles = "VIEWER")
+    void getSellOrderHistoryReturns200WhenCallerIsViewer() throws Exception {
+        when(sellOrderService.getSellOrderHistory(any(), any(), any(), any(), anyInt(), anyInt()))
+                .thenReturn(PageResponseDTO.of(List.of(), 0, 0, 20));
+
+        mockMvc.perform(get("/api/admin/sell-orders/history"))
+                .andExpect(status().isOk());
+    }
 }

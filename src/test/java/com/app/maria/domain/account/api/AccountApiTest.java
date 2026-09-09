@@ -52,31 +52,33 @@ class AccountApiTest {
                                 .getDeclaredMethod("approve", Long.class)
                                 .getAnnotation(PreAuthorize.class)
                                 .value())
-                .isEqualTo("hasAnyRole('ADMIN', 'REVIEWER')");
+                .isEqualTo("hasRole('REVIEWER')");
         assertThat(
                         AccountApi.class
                                 .getDeclaredMethod("reject", Long.class, ReasonRequestDTO.class)
                                 .getAnnotation(PreAuthorize.class)
                                 .value())
-                .isEqualTo("hasAnyRole('ADMIN', 'REVIEWER')");
+                .isEqualTo("hasRole('REVIEWER')");
         assertThat(
                         AccountApi.class
                                 .getDeclaredMethod("override", Long.class, ReasonRequestDTO.class)
                                 .getAnnotation(PreAuthorize.class)
                                 .value())
-                .isEqualTo("hasAnyRole('ADMIN', 'REVIEWER')");
+                .isEqualTo("hasRole('REVIEWER')");
 
         assertThat(
                         AccountApi.class
                                 .getDeclaredMethod("apply", AccountRequestDTO.class)
-                                .getAnnotation(PreAuthorize.class))
-                .isNull();
+                                .getAnnotation(PreAuthorize.class)
+                                .value())
+                .isEqualTo("hasRole('REVIEWER')");
         assertThat(
                         AccountApi.class
                                 .getDeclaredMethod(
                                         "reapply", Long.class, AccountReapplyRequestDTO.class)
-                                .getAnnotation(PreAuthorize.class))
-                .isNull();
+                                .getAnnotation(PreAuthorize.class)
+                                .value())
+                .isEqualTo("hasRole('REVIEWER')");
         assertThat(
                         AccountApi.class
                                 .getDeclaredMethod("getAccount", Long.class)
