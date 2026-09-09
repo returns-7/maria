@@ -3,6 +3,7 @@ package com.app.maria.domain.admin.service;
 import com.app.maria.domain.admin.dto.AdminUserDTO;
 import com.app.maria.domain.admin.dto.request.AdminLoginRequestDTO;
 import com.app.maria.domain.admin.dto.response.AdminLoginResponseDTO;
+import com.app.maria.domain.admin.dto.response.AdminMeResponseDTO;
 import com.app.maria.domain.admin.dto.response.AdminSummaryResponseDTO;
 import com.app.maria.domain.admin.exception.AdminException;
 import com.app.maria.domain.admin.exception.AdminNotFoundException;
@@ -109,5 +110,13 @@ public class AdminServiceImpl implements AdminService {
     public List<AdminSummaryResponseDTO> getAllAdmins() {
         List<AdminUserDTO> admins = adminMapper.selectAllAdmins();
         return admins.stream().map(AdminSummaryResponseDTO::new).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AdminMeResponseDTO getMe(Long adminId) {
+        AdminUserDTO admin = adminMapper.selectAdminByAdminId(adminId)
+                .orElseThrow(() -> new AdminNotFoundException("관리자를 찾을 수 없습니다."));
+        return new AdminMeResponseDTO(admin.getAdminId(), admin.getName(), admin.getRole());
     }
 }
