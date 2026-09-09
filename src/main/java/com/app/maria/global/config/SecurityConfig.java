@@ -49,6 +49,7 @@ public class SecurityConfig {
         // JWT 인증 API
         "/api/auth/admin/login",
         "/api/auth/admin/refresh",
+        "/api/auth/admin/logout",
 
         // Swagger
         "/swagger-ui/**",
