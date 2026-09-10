@@ -7,19 +7,29 @@ var MARIA = window.MARIA || {};
 
 MARIA.auth = (function ($) {
 
+    var _admin = null;
+    var _authPromise = null;
+
     // GET /api/admin/me 호출로 로그인 여부 확인.
     // 401이면 /login으로 리다이렉트. Promise를 반환하므로 .done()에서 후속 처리.
+    // 이미 진행 중이거나 완료된 요청이 있으면 같은 promise 반환 — 중복 호출 방지.
     function requireAuth() {
+        if (_authPromise) return _authPromise;
         var deferred = $.Deferred();
+        _authPromise = deferred.promise();
         $.ajax({ url: "/api/admin/me", method: "GET" })
-            .done(function (res) { deferred.resolve(res.data); })
+            .done(function (res) {
+                _admin = res.data;
+                deferred.resolve(res.data);
+            })
             .fail(function (xhr) {
+                _authPromise = null;
                 if (xhr.status === 401) {
                     window.location.href = "/login";
                 }
                 deferred.reject(xhr);
             });
-        return deferred.promise();
+        return _authPromise;
     }
 
     function logout() {
@@ -72,5 +82,7 @@ MARIA.auth = (function ($) {
         return refreshInFlight;
     }
 
-    return { requireAuth: requireAuth, logout: logout, ajax: ajax };
+    function currentAdmin() { return _admin; }
+
+    return { requireAuth: requireAuth, currentAdmin: currentAdmin, logout: logout, ajax: ajax };
 })(jQuery);
