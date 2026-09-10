@@ -83,6 +83,13 @@ public class AdminServiceImpl implements AdminService {
             throw new AdminException("유효하지 않은 토큰입니다.");
         }
 
+        // type claim이 없는 구 토큰은 허용(자연 만료 후 자동 소멸),
+        // type이 명시됐는데 refresh가 아니면 거부
+        String tokenType = claims.get("type", String.class);
+        if (tokenType != null && !"refresh".equals(tokenType)) {
+            throw new AdminException("유효하지 않은 토큰입니다.");
+        }
+
         Long adminId;
         try {
             adminId = Long.parseLong(claims.getSubject());
