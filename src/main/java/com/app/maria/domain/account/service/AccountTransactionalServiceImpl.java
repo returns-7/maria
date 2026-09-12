@@ -290,6 +290,7 @@ public class AccountTransactionalServiceImpl implements AccountTransactionalServ
             String beforeValue,
             String afterValue,
             AuditLogReasonCode reasonCode) {
+        // 업무 시각은 Account 이력에 저장한다. processedAt은 비워 DB 실제 기록 시각을 사용한다.
         auditLogService.log(
                 AuditLogDTO.builder()
                         .adminId(adminId)

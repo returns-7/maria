@@ -309,5 +309,7 @@ class AccountTransactionalServiceImplTest {
         assertThat(auditLog.getBeforeValue()).isEqualTo(beforeValue);
         assertThat(auditLog.getAfterValue()).isEqualTo(afterValue);
         assertThat(auditLog.getReasonCode()).isEqualTo(reasonCode.name());
+        // 시뮬레이션 업무 시각을 감사 시각으로 넘기지 않아 DB의 CURRENT_TIMESTAMP를 사용한다.
+        assertThat(auditLog.getProcessedAt()).isNull();
     }
 }

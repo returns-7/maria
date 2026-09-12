@@ -88,6 +88,11 @@ $(function () {
         MARIA.ui.showError(message);
     }
 
+    function canManageAccount() {
+        var admin = MARIA.auth.currentAdmin();
+        return !!admin && admin.role === "REVIEWER";
+    }
+
     function canProcessClosure() {
         var admin = MARIA.auth.currentAdmin();
         return !!admin && (admin.role === "ADMIN" || admin.role === "REVIEWER");
@@ -381,11 +386,11 @@ $(function () {
         $("#detailAmount").text(formatAmount(account.amount));
         $("#detailBenefit").text(account.benefit || "-");
         $("#detailOpenedAt").text(formatDateTime(account.openedAt));
-        $("#approveAccount, #rejectAccount").toggle(account.status === "APPLIED");
-        $("#openLimitModal").toggle(account.status === "APPLIED" || account.status === "OPENED");
-        $("#rejectionActions").toggle(account.status === "APPLIED");
-        $("#openReapplyModal").toggle(account.status === "REJECTED");
-        $("#overrideActions").toggle(account.status === "REJECTED");
+        $("#approveAccount, #rejectAccount").toggle(canManageAccount() && (account.status === "APPLIED"));
+        $("#openLimitModal").toggle(canManageAccount() && (account.status === "APPLIED" || account.status === "OPENED"));
+        $("#rejectionActions").toggle(canManageAccount() && (account.status === "APPLIED"));
+        $("#openReapplyModal").toggle(canManageAccount() && (account.status === "REJECTED"));
+        $("#overrideActions").toggle(canManageAccount() && (account.status === "REJECTED"));
     }
 
     function renderRelatedList(selector, items, renderer, emptyMessage) {
@@ -483,6 +488,7 @@ $(function () {
     }
 
     function openLimitModal() {
+        if (!canManageAccount()) return;
         var account = getSelectedAccount();
         if (!account || (account.status !== "APPLIED" && account.status !== "OPENED")) {
             return;
@@ -501,6 +507,7 @@ $(function () {
     }
 
     function openReapplyModal() {
+        if (!canManageAccount()) return;
         var account = getSelectedAccount();
         if (!account || account.status !== "REJECTED") {
             return;
@@ -579,6 +586,7 @@ $(function () {
     }
 
     function submitReview(action) {
+        if (!canManageAccount()) return;
         if (!selectedAccountId) {
             return;
         }
@@ -604,6 +612,7 @@ $(function () {
     }
 
     function submitRecovery(action, payload) {
+        if (!canManageAccount()) return;
         if (!selectedAccountId) {
             return;
         }
@@ -655,6 +664,7 @@ $(function () {
     }
 
     function submitForm($form, options) {
+        if (!canManageAccount()) return;
         if (!$form[0].checkValidity()) {
             showError("입력값을 확인해 주세요.");
             return;
@@ -747,6 +757,7 @@ $(function () {
     $("#closeReapplyModal, #cancelReapplyModal, #accountReapplyModal .account-modal-backdrop").on("click", function () { closeModal("#accountReapplyModal"); });
     $("#accountReapplyModalForm").on("submit", function (event) {
         event.preventDefault();
+        if (!canManageAccount()) return;
         var limitAmount = parseLimitAmount("#modalReapplyLimitAmount");
         if (!this.checkValidity() || !isValidLimitAmount(limitAmount)) {
             showError("재신청 한도는 1원 이상 5천만원 이하의 정수여야 합니다.");
@@ -767,6 +778,7 @@ $(function () {
     $("#closeLimitModal, #cancelLimitModal, #accountLimitModal .account-modal-backdrop").on("click", function () { closeModal("#accountLimitModal"); });
     $("#accountLimitModalForm").on("submit", function (event) {
         event.preventDefault();
+        if (!canManageAccount()) return;
         var account = getSelectedAccount();
         var limitAmount = parseLimitAmount("#modalNewLimitAmount");
         if (!account || !this.checkValidity() || !isValidLimitAmount(limitAmount)) {
@@ -787,6 +799,7 @@ $(function () {
     });
     $("#accountCreateForm").on("submit", function (event) {
         event.preventDefault();
+        if (!canManageAccount()) return;
         var $form = $(this);
         var limitAmount = parseLimitAmount("#createLimitAmount");
         var customerId = Number($("#createCustomerId").val());
@@ -808,6 +821,8 @@ $(function () {
             })
         });
     });
+
+    $("#accountCreateForm").closest(".account-form-card").toggle(canManageAccount());
 
     loadBusinessToday().done(function () {
         renderSummary();

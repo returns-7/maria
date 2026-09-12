@@ -1,7 +1,7 @@
 package com.app.maria.domain.account.provider;
 
 import com.app.maria.domain.account.dto.AccountDTO;
-import com.app.maria.domain.account.dto.response.MydataRiaAccountsResponseDTO;
+import com.app.maria.domain.account.provider.dto.response.MydataRiaAccountsResponseDTO;
 import java.math.BigDecimal;
 import org.springframework.http.HttpStatusCode;
 

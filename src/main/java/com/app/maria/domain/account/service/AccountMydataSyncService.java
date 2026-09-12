@@ -102,6 +102,7 @@ public class AccountMydataSyncService {
             }
 
             return switch (taskValue.split(":", 2)[0]) {
+                    // 이전 버전이 Redis에 저장한 CREATE/UPDATE_LIMIT 작업도 최신 상태로 동기화한다.
                 case "SYNC", "CREATE", "UPDATE_LIMIT" -> SYNC;
                 default -> throw new IllegalArgumentException("유효하지 않은 MyData 동기화 작업입니다.");
             };

@@ -1,5 +1,6 @@
-package com.app.maria.domain.account.dto.response;
+package com.app.maria.domain.account.provider.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.math.BigDecimal;
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -10,6 +11,7 @@ import lombok.ToString;
 @Getter
 @NoArgsConstructor
 @ToString
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class MydataRiaAccountsResponseDTO {
     private String message;
     private List<MyDataAccountResponse> data;
@@ -18,9 +20,9 @@ public class MydataRiaAccountsResponseDTO {
     @ToString
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class MyDataAccountResponse {
         private Long mydataAccountId;
-        private String ciHash;
         private String brokerName;
         private BigDecimal riaLimit;
         private BigDecimal riaCumulativeSell;
