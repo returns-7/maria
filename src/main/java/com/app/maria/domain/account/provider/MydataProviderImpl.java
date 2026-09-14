@@ -26,9 +26,6 @@ public class MydataProviderImpl implements MydataProvider {
         this.restClient = restClient;
     }
 
-    @Value("${custom.mydata.url}")
-    private String myDataUrl;
-
     @Value("${custom.mydata.own-broker-name}")
     private String ownBrokerName;
 
@@ -60,7 +57,7 @@ public class MydataProviderImpl implements MydataProvider {
         try {
             return restClient
                     .post()
-                    .uri(myDataUrl + RIA_ACCOUNTS_PATH)
+                    .uri(RIA_ACCOUNTS_PATH)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(req)
                     .retrieve()
@@ -85,7 +82,7 @@ public class MydataProviderImpl implements MydataProvider {
             ResponseEntity<?> response =
                     restClient
                             .post()
-                            .uri(myDataUrl + SYNC_RIA_ACCOUNT_PATH)
+                            .uri(SYNC_RIA_ACCOUNT_PATH)
                             .contentType(MediaType.APPLICATION_JSON)
                             .body(req)
                             .retrieve()

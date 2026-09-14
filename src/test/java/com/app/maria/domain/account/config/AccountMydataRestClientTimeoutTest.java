@@ -90,7 +90,6 @@ class AccountMydataRestClientTimeoutTest {
                     new AccountMydataRestClientConfig()
                             .accountMydataRestClient(RestClient.builder(), url);
             MydataProviderImpl provider = new MydataProviderImpl(client);
-            ReflectionTestUtils.setField(provider, "myDataUrl", url);
             ReflectionTestUtils.setField(provider, "ownBrokerName", "test-broker");
             assertThatThrownBy(() -> provider.getExternalConfiguredLimit("test-ci"))
                     .isInstanceOf(MydataApiException.class)

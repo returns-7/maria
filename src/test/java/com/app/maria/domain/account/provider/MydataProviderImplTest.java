@@ -40,7 +40,6 @@ class MydataProviderImplTest {
         RestClient.Builder builder = RestClient.builder().baseUrl(MYDATA_URL);
         mockServer = MockRestServiceServer.bindTo(builder).build();
         provider = new MydataProviderImpl(builder.build());
-        ReflectionTestUtils.setField(provider, "myDataUrl", MYDATA_URL);
         ReflectionTestUtils.setField(provider, "ownBrokerName", "리턴증권");
     }
 

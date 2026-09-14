@@ -47,7 +47,7 @@ public class AccountApi {
     }
 
     @PostMapping("/applications")
-    @PreAuthorize("hasRole('REVIEWER')")
+    @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponseDTO<AccountResponseDTO>> apply(
             @Valid @RequestBody AccountRequestDTO requestDTO) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -76,7 +76,7 @@ public class AccountApi {
     }
 
     @PostMapping("/{accountId}/reapply")
-    @PreAuthorize("hasRole('REVIEWER')")
+    @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponseDTO<AccountResponseDTO>> reapply(
             @PathVariable @Positive(message = "계좌 ID는 0보다 커야 합니다.") Long accountId,
             @Valid @RequestBody AccountReapplyRequestDTO accountRequestDTO) {

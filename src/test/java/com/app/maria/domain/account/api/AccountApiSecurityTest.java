@@ -32,18 +32,6 @@ class AccountApiSecurityTest {
                 .flatMap(
                         role ->
                                 Stream.of(
-                                        Arguments.of(
-                                                role,
-                                                "POST",
-                                                "/applications",
-                                                "{\"customerId\":1,\"limitAmount\":1000}",
-                                                201),
-                                        Arguments.of(
-                                                role,
-                                                "POST",
-                                                "/1/reapply",
-                                                "{\"limitAmount\":1000}",
-                                                200),
                                         Arguments.of(role, "POST", "/1/approve", "{}", 200),
                                         Arguments.of(
                                                 role,
@@ -67,8 +55,8 @@ class AccountApiSecurityTest {
 
     @ParameterizedTest
     @MethodSource("writes")
-    void onlyReviewerCanWrite(String role, String method, String path, String body, int success)
-            throws Exception {
+    void onlyReviewerCanReviewOrUpdateLimit(
+            String role, String method, String path, String body, int success) throws Exception {
         boolean allowed = role.equals("REVIEWER");
         mockMvc.perform(
                         request(HttpMethod.valueOf(method), "/api/account" + path)
@@ -77,6 +65,32 @@ class AccountApiSecurityTest {
                                 .content(body))
                 .andExpect(status().is(allowed ? success : 403));
         if (!allowed) verifyNoInteractions(accountService);
+    }
+
+    static Stream<Arguments> blockedCustomerWrites() {
+        return Stream.of("ADMIN", "REVIEWER", "SETTLEMENT", "VIEWER")
+                .flatMap(
+                        role ->
+                                Stream.of(
+                                        Arguments.of(
+                                                role,
+                                                "/applications",
+                                                "{\"customerId\":1,\"limitAmount\":1000}"),
+                                        Arguments.of(
+                                                role, "/1/reapply", "{\"limitAmount\":1000}")));
+    }
+
+    @ParameterizedTest
+    @MethodSource("blockedCustomerWrites")
+    void customerInitiatedWritesAreBlockedUntilCustomerApiIsSeparated(
+            String role, String path, String body) throws Exception {
+        mockMvc.perform(
+                        post("/api/account" + path)
+                                .with(user("operator").roles(role))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(accountService);
     }
 
     static Stream<Arguments> reads() {
