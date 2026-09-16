@@ -13,5 +13,6 @@ public class ExternalTradeSyncResultDTO {
     private int failedCustomerCount;
     private int newJudgementCount;
     private int skippedJudgementCount;
+    private int permanentlyFailedJudgementCount;
     private List<Long> newJudgementIds;
 }

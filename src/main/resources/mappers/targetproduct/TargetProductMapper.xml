@@ -17,6 +17,26 @@
         )
     </select>
 
+    <select id="selectFailureByMydataTradeId" resultType="TargetProductJudgementFailureDTO">
+        SELECT
+        failure_id AS failureId, mydata_trade_id AS mydataTradeId, ci_hash AS ciHash,
+        trade_date AS tradeDate, failure_count AS failureCount, last_error AS lastError,
+        first_failed_at AS firstFailedAt, last_failed_at AS lastFailedAt
+        FROM target_product_judgement_failure
+        WHERE mydata_trade_id = #{mydataTradeId}
+    </select>
+
+    <insert id="upsertFailure" parameterType="TargetProductJudgementFailureDTO">
+        INSERT INTO target_product_judgement_failure
+        (mydata_trade_id, ci_hash, trade_date, failure_count, last_error, first_failed_at, last_failed_at)
+        VALUES
+        (#{mydataTradeId}, #{ciHash}, #{tradeDate}, #{failureCount}, #{lastError}, #{firstFailedAt}, #{lastFailedAt})
+        ON DUPLICATE KEY UPDATE
+        failure_count = #{failureCount},
+        last_error = #{lastError},
+        last_failed_at = #{lastFailedAt}
+    </insert>
+
     <select id="selectJudgements" parameterType="TargetProductSearchDTO" resultType="TargetProductJudgementListDTO">
         SELECT
         j.judgement_id  AS judgementId,
