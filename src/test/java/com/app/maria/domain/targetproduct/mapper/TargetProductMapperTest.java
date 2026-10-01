@@ -637,6 +637,20 @@ class TargetProductMapperTest {
                         CONSTRAINT uq_target_product__trade UNIQUE (mydata_trade_id)
                     )
                     """);
+            statement.execute(
+                    """
+                    CREATE TABLE target_product_judgement_failure (
+                        failure_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                        mydata_trade_id BIGINT NOT NULL,
+                        ci_hash VARCHAR(64) NOT NULL,
+                        trade_date DATE NOT NULL,
+                        failure_count INT NOT NULL,
+                        last_error VARCHAR(500),
+                        first_failed_at DATETIME NOT NULL,
+                        last_failed_at DATETIME NOT NULL,
+                        CONSTRAINT uq_target_product_failure__trade UNIQUE (mydata_trade_id)
+                    )
+                    """);
         }
     }
 }

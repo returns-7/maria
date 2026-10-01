@@ -19,6 +19,7 @@ import com.app.maria.domain.externaltradesync.dto.request.MydataTradeRequestDTO;
 import com.app.maria.domain.externaltradesync.dto.response.MydataTradeResponseDTO;
 import com.app.maria.domain.externaltradesync.mapper.ExternalTradeSyncCursorMapper;
 import com.app.maria.domain.targetproduct.dto.TargetProductJudgementDTO;
+import com.app.maria.domain.targetproduct.dto.TargetProductJudgementFailureDTO;
 import com.app.maria.domain.targetproduct.mapper.TargetProductMapper;
 import com.app.maria.domain.targetproduct.service.TargetProductService;
 import com.app.maria.global.client.mydatatrade.MydataTradeClient;
@@ -310,6 +311,66 @@ class ExternalTradeSyncServiceImplTest {
 
         // 첫 동기화(fromDate=null)에서 유일한 거래가 실패했으므로 커서를 저장할 근거가 없다
         verify(cursorMapper, never()).upsertCursor(any());
+    }
+
+    @Test
+    @DisplayName("거래 판정이 임계치(3회)만큼 반복 실패하면 영구실패로 처리하고 커서를 넘긴다")
+    void tradeExceedingMaxFailureCountIsPermanentlyFailedAndCursorAdvances() {
+        MydataTradeResponseDTO failing = trade(100L, "FUND", "BADCODE", LocalDate.of(2026, 3, 20));
+
+        when(customerMapper.selectActiveRiaCustomers()).thenReturn(List.of(customer(1L, "ci-1")));
+        when(cursorMapper.selectByCustomerId(1L)).thenReturn(Optional.empty());
+        when(mydataTradeClient.getTrades(any())).thenReturn(List.of(failing));
+        when(targetProductMapper.existsByMydataTradeId(100L)).thenReturn(false);
+        when(targetProductService.judge(failing))
+                .thenThrow(new RuntimeException("mydata 펀드 조회 실패"));
+        // 이미 2번 실패한 상태에서 이번이 3번째 실패
+        when(targetProductMapper.selectFailureByMydataTradeId(100L))
+                .thenReturn(
+                        Optional.of(
+                                TargetProductJudgementFailureDTO.builder()
+                                        .mydataTradeId(100L)
+                                        .failureCount(2)
+                                        .build()));
+
+        externalTradeSyncService.syncAll();
+
+        ArgumentCaptor<TargetProductJudgementFailureDTO> failureCaptor =
+                ArgumentCaptor.forClass(TargetProductJudgementFailureDTO.class);
+        verify(targetProductMapper).upsertFailure(failureCaptor.capture());
+        assertThat(failureCaptor.getValue().getFailureCount()).isEqualTo(3);
+
+        // 영구실패 처리라 더 이상 재시도 대상이 아니므로, 커서가 이 거래일까지 전진해야 한다
+        ArgumentCaptor<ExternalTradeSyncCursorDTO> cursorCaptor =
+                ArgumentCaptor.forClass(ExternalTradeSyncCursorDTO.class);
+        verify(cursorMapper).upsertCursor(cursorCaptor.capture());
+        assertThat(cursorCaptor.getValue().getLastSyncedTradeDate())
+                .isEqualTo(LocalDate.of(2026, 3, 20));
+    }
+
+    @Test
+    @DisplayName("영구실패 건수는 syncAll() 결과의 permanentlyFailedJudgementCount로 집계된다")
+    void syncAllCountsPermanentlyFailedJudgements() {
+        MydataTradeResponseDTO failing = trade(100L, "FUND", "BADCODE", LocalDate.of(2026, 3, 20));
+
+        when(customerMapper.selectActiveRiaCustomers()).thenReturn(List.of(customer(1L, "ci-1")));
+        when(cursorMapper.selectByCustomerId(1L)).thenReturn(Optional.empty());
+        when(mydataTradeClient.getTrades(any())).thenReturn(List.of(failing));
+        when(targetProductMapper.existsByMydataTradeId(100L)).thenReturn(false);
+        when(targetProductService.judge(failing))
+                .thenThrow(new RuntimeException("mydata 펀드 조회 실패"));
+        when(targetProductMapper.selectFailureByMydataTradeId(100L))
+                .thenReturn(
+                        Optional.of(
+                                TargetProductJudgementFailureDTO.builder()
+                                        .mydataTradeId(100L)
+                                        .failureCount(2)
+                                        .build()));
+
+        var result = externalTradeSyncService.syncAll();
+
+        assertThat(result.getPermanentlyFailedJudgementCount()).isEqualTo(1);
+        assertThat(result.getSkippedJudgementCount()).isEqualTo(0);
     }
 
     @Test

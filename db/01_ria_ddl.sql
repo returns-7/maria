@@ -25,6 +25,7 @@ DROP TABLE IF EXISTS krw_exchange;
 DROP TABLE IF EXISTS sell_order;
 DROP TABLE IF EXISTS outbound;
 DROP TABLE IF EXISTS target_product_judgement;
+DROP TABLE IF EXISTS target_product_judgement_failure;
 DROP TABLE IF EXISTS external_trade_sync_cursor;
 DROP TABLE IF EXISTS inbound_min;
 DROP TABLE IF EXISTS inbound_detail;
@@ -255,6 +256,20 @@ CREATE TABLE target_product_judgement (
     PRIMARY KEY (judgement_id),
     CONSTRAINT uq_target_product__trade UNIQUE (mydata_trade_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='G2 대상상품 판별 결과(스냅샷)';
+
+-- G1 거래 판정 실패 재시도 카운트(N회 초과 시 영구실패로 커서를 넘김)
+CREATE TABLE target_product_judgement_failure (
+    failure_id      BIGINT        NOT NULL AUTO_INCREMENT,
+    mydata_trade_id BIGINT        NOT NULL COMMENT 'mydata_trade.trade_id 참조(다른 DB, FK 불가)',
+    ci_hash         VARCHAR(64)   NOT NULL,
+    trade_date      DATE          NOT NULL,
+    failure_count   INT           NOT NULL COMMENT '누적 실패 횟수',
+    last_error      VARCHAR(500)  NULL COMMENT '가장 최근 실패 원인(예외 메시지)',
+    first_failed_at DATETIME      NOT NULL,
+    last_failed_at  DATETIME      NOT NULL,
+    PRIMARY KEY (failure_id),
+    CONSTRAINT uq_target_product_failure__trade UNIQUE (mydata_trade_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='G1 거래 판정 실패 재시도 카운트';
 
 -- G1 mydata 거래 동기화 커서(고객별 마지막 처리 거래일 — 반복 동기화 시 fromDate로 사용)
 CREATE TABLE external_trade_sync_cursor (
