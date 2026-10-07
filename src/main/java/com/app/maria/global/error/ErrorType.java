@@ -121,7 +121,18 @@ public enum ErrorType {
     // AuditLog
     AUDIT_LOG_ACTOR_NOT_FOUND(
             HttpStatus.BAD_REQUEST, "감사 로그를 위한 관리자 정보를 찾을 수 없습니다.", LogLevel.WARN),
-    AUDIT_LOG_INSERT_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "감사 로그 저장에 실패했습니다.", LogLevel.ERROR);
+    AUDIT_LOG_INSERT_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "감사 로그 저장에 실패했습니다.", LogLevel.ERROR),
+
+    // TargetProduct(G2)
+    TARGET_PRODUCT_FUND_NOT_FOUND(HttpStatus.BAD_GATEWAY, "펀드 정보를 조회할 수 없습니다.", LogLevel.ERROR),
+
+    // Domestic(D1/D2)
+    DOMESTIC_PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, "종목 정보를 찾을 수 없습니다.", LogLevel.WARN),
+    DOMESTIC_INVESTMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "계좌를 찾을 수 없습니다.", LogLevel.WARN),
+
+    // Inbound(B1)
+    REGISTRABLE_STOCK_NOT_FOUND(
+            HttpStatus.BAD_GATEWAY, "등록가능 보유수량 정보를 조회할 수 없습니다.", LogLevel.ERROR);
 
     private final HttpStatus status;
     private final String message;
