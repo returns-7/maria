@@ -1,0 +1,300 @@
+package com.app.maria.domain.sellorder.service;
+
+import com.app.maria.domain.account.dto.AccountDTO;
+import com.app.maria.domain.account.mapper.AccountMapper;
+import com.app.maria.domain.foreignproduct.dto.ForeignProductDTO;
+import com.app.maria.domain.foreignproduct.mapper.ForeignProductMapper;
+import com.app.maria.domain.inbound.dto.InboundDetailDTO;
+import com.app.maria.domain.inbound.mapper.InboundMapper;
+import com.app.maria.domain.sellorder.dto.SellOrderDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderDetailDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderHistoryDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderSummaryDTO;
+import com.app.maria.domain.sellorder.dto.request.SellOrderRequestDTO;
+import com.app.maria.domain.sellorder.dto.response.SellOrderResponseDTO;
+import com.app.maria.domain.sellorder.mapper.SellOrderMapper;
+import com.app.maria.domain.sellorder.type.SellOrderAuditLogReasonCode;
+import com.app.maria.domain.sellorder.type.SellOrderStatus;
+import com.app.maria.domain.settlement.service.ProvisionalExchangeService;
+import com.app.maria.domain.settlement.service.SettlementService;
+import com.app.maria.global.audit.dto.AuditLogDTO;
+import com.app.maria.global.audit.service.AuditLogService;
+import com.app.maria.global.client.exchange.ExchangeRateClient;
+import com.app.maria.global.client.kis.KisExchangeCode;
+import com.app.maria.global.client.kis.KisPriceClient;
+import com.app.maria.global.clock.service.BusinessClockService;
+import com.app.maria.global.exception.AppException;
+import com.app.maria.global.exception.ErrorType;
+import com.app.maria.global.response.PageResponseDTO;
+import com.app.maria.global.sort.OrderBySpec;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+@Transactional(rollbackFor = Exception.class)
+public class SellOrderServiceImpl implements SellOrderService {
+
+    /** 매도 · 환전 내역의 정렬 키(화면 머리글) → 정렬 열. 여기 없는 키는 무시한다. */
+    private static final Map<String, String> HISTORY_SORT_COLUMNS =
+            Map.of(
+                    "accountNo", "acc.account_no",
+                    "customerName", "c.name",
+                    "name", "fp.name",
+                    "sellQty", "s.sell_qty",
+                    "basePrice", "s.base_price",
+                    "processedAt", "s.processed_at",
+                    "provisionalAmount", "krw.provisional_amount",
+                    "finalAmount", "krw.final_amount",
+                    "status", "s.status");
+
+    private final AccountMapper accountMapper;
+    private final SellOrderMapper sellOrderMapper;
+    private final KisPriceClient kis;
+    private final ExchangeRateClient exchange;
+    private final InboundMapper inboundMapper;
+    private final ForeignProductMapper foreignProductMapper;
+    private final SellLimitService sellLimitService;
+    private final BusinessClockService businessClockService;
+    private final ProvisionalExchangeService provisionalExchangeService;
+    private final SettlementService settlementService;
+    private final AuditLogService auditLogService;
+
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED, rollbackFor = Exception.class)
+    public List<SellOrderResponseDTO> placeSellOrder(
+            Long actorAdminId, SellOrderRequestDTO request) {
+
+        SellOrderDTO sellOrderDTO = request.toSellOrderDTO();
+
+        AccountDTO account =
+                accountMapper
+                        .selectByAccountId(sellOrderDTO.getAccountId())
+                        .orElseThrow(() -> new AppException(ErrorType.ACCOUNT_STATE_NOT_ALLOWED));
+        if (!account.getStatus().canTrade()) {
+            throw new AppException(ErrorType.ACCOUNT_STATE_NOT_ALLOWED, account.getStatus());
+        }
+
+        List<InboundDetailDTO> lots =
+                inboundMapper.selectFifoLots(
+                        sellOrderDTO.getAccountId(), sellOrderDTO.getForeignProductId());
+
+        BigDecimal totalCurrentQty =
+                lots.stream()
+                        .map(InboundDetailDTO::getCurrentQty)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (sellOrderDTO.getSellQty().compareTo(totalCurrentQty) > 0) {
+            throw new AppException(ErrorType.SELL_ORDER_QTY_EXCEEDED);
+        }
+
+        ForeignProductDTO product =
+                foreignProductMapper
+                        .selectById(sellOrderDTO.getForeignProductId())
+                        .orElseThrow(
+                                () ->
+                                        new AppException(
+                                                ErrorType.FOREIGN_PRODUCT_NOT_FOUND,
+                                                sellOrderDTO.getForeignProductId()));
+
+        String kisMarketCode = KisExchangeCode.fromMarket(product.getMarket());
+        BigDecimal previousClose = kis.getPreviousClose(kisMarketCode, product.getTicker());
+
+        BigDecimal exchangeRate = exchange.getBaseRate(product.getCurrency());
+        sellOrderDTO.setBasePrice(previousClose.multiply(exchangeRate));
+        sellOrderDTO.setSettlementFxRate(exchangeRate);
+
+        BigDecimal orderAmount = sellOrderDTO.getSellQty().multiply(sellOrderDTO.getBasePrice());
+
+        boolean withinLimit =
+                sellLimitService.isWithinSellLimit(sellOrderDTO.getAccountId(), orderAmount);
+
+        if (!withinLimit) {
+            SellOrderDTO rejected =
+                    sellOrderDTO.toBuilder()
+                            .inboundDetailId(null)
+                            .status(SellOrderStatus.REJECTED)
+                            .processedAt(businessClockService.now())
+                            .build();
+            sellOrderMapper.insertSellOrder(rejected);
+            logSellOrder(actorAdminId, rejected, SellOrderAuditLogReasonCode.SELL_ORDER_REJECTED);
+
+            return List.of(new SellOrderResponseDTO(rejected));
+        }
+
+        BigDecimal remainingQty = sellOrderDTO.getSellQty();
+        List<SellOrderDTO> executeOrders = new ArrayList<>();
+
+        for (InboundDetailDTO lot : lots) {
+            if (remainingQty.compareTo(BigDecimal.ZERO) <= 0) {
+                break;
+            }
+            BigDecimal qtyFromThisLot = remainingQty.min(lot.getCurrentQty());
+
+            int updateRows =
+                    inboundMapper.decreaseCurrentQty(lot.getInboundDetailId(), qtyFromThisLot);
+            if (updateRows == 0) {
+                throw new AppException(ErrorType.SELL_ORDER_CONCURRENT_CONFLICT);
+            }
+
+            SellOrderDTO executed =
+                    sellOrderDTO.toBuilder()
+                            .inboundDetailId(lot.getInboundDetailId())
+                            .sellQty(qtyFromThisLot)
+                            .status(SellOrderStatus.EXECUTED)
+                            .processedAt(businessClockService.now())
+                            .build();
+            sellOrderMapper.insertSellOrder(executed);
+            logSellOrder(actorAdminId, executed, SellOrderAuditLogReasonCode.SELL_ORDER_EXECUTED);
+            executeOrders.add(executed);
+
+            provisionalExchangeService.createProvisionalExchange(executed);
+
+            remainingQty = remainingQty.subtract(qtyFromThisLot);
+        }
+
+        return executeOrders.stream().map(SellOrderResponseDTO::new).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SellOrderResponseDTO getSellOrder(Long orderId) {
+        SellOrderDTO dto =
+                sellOrderMapper
+                        .selectSellOrderById(orderId)
+                        .orElseThrow(
+                                () -> new AppException(ErrorType.SELL_ORDER_NOT_FOUND, orderId));
+        return new SellOrderResponseDTO(dto);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SellOrderDetailDTO getSellOrderDetail(Long orderId) {
+        return sellOrderMapper
+                .selectSellOrderDetail(orderId)
+                .orElseThrow(() -> new AppException(ErrorType.SELL_ORDER_NOT_FOUND, orderId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SellOrderResponseDTO> getSellOrderByAccount(Long accountId) {
+        List<SellOrderDTO> orders = sellOrderMapper.selectSellOrdersByAccountId(accountId);
+        return orders.stream().map(SellOrderResponseDTO::new).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal getTodaySellAmount() {
+        LocalDateTime start = businessClockService.now().toLocalDate().atStartOfDay();
+        LocalDateTime end = start.plusDays(1);
+        return sellOrderMapper.sumSellAmountBetween(start, end);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SellOrderSummaryDTO getSellOrderSummary() {
+        LocalDate today = businessClockService.now().toLocalDate();
+        LocalDate yesterday = today.minusDays(1);
+
+        BigDecimal todaySellAmount = getTodaySellAmount();
+        BigDecimal yesterdaySellAmount =
+                sellOrderMapper.sumSellAmountBetween(
+                        yesterday.atStartOfDay(), today.atStartOfDay());
+
+        int todayExecutedCount =
+                sellOrderMapper.countSellOrderHistory(
+                        null,
+                        SellOrderStatus.EXECUTED.name(),
+                        today.atStartOfDay(),
+                        today.atTime(23, 59, 59));
+        int yesterdayExecutedCount =
+                sellOrderMapper.countSellOrderHistory(
+                        null,
+                        SellOrderStatus.EXECUTED.name(),
+                        yesterday.atStartOfDay(),
+                        yesterday.atTime(23, 59, 59));
+
+        BigDecimal pendingProvisionalAmount = settlementService.getPendingProvisionalAmount();
+        BigDecimal todayFinalizedAmount =
+                settlementService.getFinalizedAmountBetween(
+                        today.atStartOfDay(), today.plusDays(1).atStartOfDay());
+
+        return SellOrderSummaryDTO.builder()
+                .todaySellAmount(todaySellAmount)
+                .todaySellAmountChangeRate(changeRate(todaySellAmount, yesterdaySellAmount))
+                .todayExecutedCount(todayExecutedCount)
+                .todayExecutedCountChangeRate(
+                        changeRate(
+                                BigDecimal.valueOf(todayExecutedCount),
+                                BigDecimal.valueOf(yesterdayExecutedCount)))
+                .pendingProvisionalAmount(pendingProvisionalAmount)
+                .todayFinalizedAmount(todayFinalizedAmount)
+                .build();
+    }
+
+    private void logSellOrder(
+            Long adminId, SellOrderDTO order, SellOrderAuditLogReasonCode reasonCode) {
+        // 고객 신청은 관리자 행위자가 없다(adminId null). 고객 감사 actor가 정해질 때까지 감사 로그를 남기지 않는다.
+        if (adminId == null) {
+            return;
+        }
+        auditLogService.log(
+                AuditLogDTO.builder()
+                        .adminId(adminId)
+                        .targetTable("SELL_ORDER")
+                        .targetPk(String.valueOf(order.getOrderId()))
+                        .afterValue(order.getStatus().name())
+                        .reasonCode(reasonCode.name())
+                        .build());
+    }
+
+    private BigDecimal changeRate(BigDecimal today, BigDecimal yesterday) {
+        if (yesterday == null || yesterday.compareTo(BigDecimal.ZERO) == 0) {
+            return null;
+        }
+        return today.subtract(yesterday)
+                .divide(yesterday, 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100))
+                .setScale(1, RoundingMode.HALF_UP);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponseDTO<SellOrderHistoryDTO> getSellOrderHistory(
+            String keyword,
+            SellOrderStatus status,
+            LocalDate startDate,
+            LocalDate endDate,
+            String sort,
+            String direction,
+            int page,
+            int size) {
+        int offset = page * size;
+        String orderBy =
+                OrderBySpec.resolve(
+                        HISTORY_SORT_COLUMNS,
+                        sort,
+                        direction,
+                        "s.processed_at DESC, s.order_id DESC");
+        String statusName = status == null ? null : status.name();
+        LocalDateTime startDateTime = startDate == null ? null : startDate.atStartOfDay();
+        LocalDateTime endDateTime = endDate == null ? null : endDate.atTime(23, 59, 59);
+
+        List<SellOrderHistoryDTO> content =
+                sellOrderMapper.selectSellOrderHistory(
+                        keyword, statusName, startDateTime, endDateTime, orderBy, offset, size);
+        int totalCount =
+                sellOrderMapper.countSellOrderHistory(
+                        keyword, statusName, startDateTime, endDateTime);
+        return PageResponseDTO.of(content, totalCount, page, size);
+    }
+}

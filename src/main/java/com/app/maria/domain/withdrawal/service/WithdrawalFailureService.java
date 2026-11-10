@@ -1,0 +1,37 @@
+package com.app.maria.domain.withdrawal.service;
+
+import com.app.maria.domain.withdrawal.dto.WithdrawalDTO;
+import com.app.maria.domain.withdrawal.dto.WithdrawalFailureContext;
+import com.app.maria.domain.withdrawal.mapper.WithdrawalMapper;
+import com.app.maria.domain.withdrawal.type.WithdrawalStatus;
+import com.app.maria.global.exception.AppException;
+import com.app.maria.global.exception.ErrorType;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+public class WithdrawalFailureService {
+
+    private final WithdrawalMapper withdrawalMapper;
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void record(WithdrawalFailureContext context) {
+        WithdrawalDTO failedWithdrawal =
+                WithdrawalDTO.builder()
+                        .accountId(context.getAccountId())
+                        .requestedAmount(context.getRequestedAmount())
+                        .processedAt(context.getFailedAt())
+                        .destinationAccountNo(context.getDestinationAccountNo())
+                        .status(WithdrawalStatus.FAILED)
+                        .destinationGeneralAccountId(context.getDestinationGeneralAccountId())
+                        .build();
+
+        int insertedRows = withdrawalMapper.insertWithdrawal(failedWithdrawal);
+        if (insertedRows != 1) {
+            throw new AppException(ErrorType.WITHDRAWAL_PROCESSING_FAILED, context.getAccountId());
+        }
+    }
+}

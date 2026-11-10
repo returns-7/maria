@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.app.maria.domain.account.mapper.AccountStatusLogMapper">
+    <insert id="insertLog" parameterType="AccountStatusLogDTO">
+        INSERT INTO account_status_log (
+            account_id,
+            prev_status,
+            new_status,
+            changed_at,
+            reason
+        ) VALUES (
+            #{accountId},
+            #{prevStatus},
+            #{newStatus},
+            #{changedAt},
+            #{reason}
+        )
+    </insert>
+    <select id="selectByAccountId" resultType="AccountStatusLogDTO" parameterType="Long">
+        SELECT
+        *
+        FROM account_status_log
+        WHERE account_id = #{accountId}
+        ORDER BY changed_at ASC, log_id ASC
+    </select>
+    <select id="selectLatestByAccountId" resultType="AccountStatusLogDTO" parameterType="Long">
+        SELECT
+        *
+        FROM account_status_log
+        WHERE account_id = #{accountId}
+        ORDER BY changed_at DESC, log_id DESC
+        LIMIT 1
+    </select>
+    <select id="selectLimitChangesByAccountId" resultType="AccountStatusLogDTO" parameterType="Long">
+        SELECT
+        *
+        FROM account_status_log
+        WHERE account_id = #{accountId}
+        AND prev_status = new_status
+        AND reason LIKE 'LIMIT_CHANGE|%'
+        ORDER BY changed_at DESC, log_id DESC
+    </select>
+    <select id="selectLatestApplicationAt" resultType="java.time.LocalDateTime" parameterType="Long">
+        SELECT changed_at
+        FROM account_status_log
+        WHERE account_id = #{accountId}
+        AND new_status = 'APPLIED'
+        AND (
+            prev_status IS NULL
+            OR prev_status = 'REJECTED'
+        )
+        ORDER BY changed_at DESC, log_id DESC
+        LIMIT 1
+    </select>
+    <select id="countByNewStatusBetween" resultType="int">
+        SELECT COUNT(*)
+        FROM account_status_log
+        WHERE new_status = #{newStatus}
+        AND changed_at >= #{start} AND changed_at &lt; #{end}
+    </select>
+</mapper>

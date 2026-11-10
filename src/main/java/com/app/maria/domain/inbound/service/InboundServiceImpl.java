@@ -1,0 +1,436 @@
+package com.app.maria.domain.inbound.service;
+
+import com.app.maria.domain.account.dto.AccountDTO;
+import com.app.maria.domain.account.mapper.AccountMapper;
+import com.app.maria.domain.foreignproduct.dto.ForeignProductDTO;
+import com.app.maria.domain.foreignproduct.mapper.ForeignProductMapper;
+import com.app.maria.domain.inbound.dto.*;
+import com.app.maria.domain.inbound.dto.request.InboundRequestDTO;
+import com.app.maria.domain.inbound.dto.response.*;
+import com.app.maria.domain.inbound.mapper.InboundMapper;
+import com.app.maria.domain.inbound.type.InboundAuditLogReasonCode;
+import com.app.maria.domain.inbound.type.InboundZeroApprovalReason;
+import com.app.maria.domain.registrablestock.dto.RegistrableStockResponseDTO;
+import com.app.maria.domain.sellorder.dto.SellOrderDTO;
+import com.app.maria.domain.sellorder.mapper.SellOrderMapper;
+import com.app.maria.global.audit.dto.AuditLogDTO;
+import com.app.maria.global.audit.service.AuditLogService;
+import com.app.maria.global.clock.service.BusinessClockService;
+import com.app.maria.global.exception.AppException;
+import com.app.maria.global.exception.ErrorType;
+import com.app.maria.global.response.ApiResponseDTO;
+import com.app.maria.global.response.PageResponseDTO;
+import com.app.maria.global.sort.OrderBySpec;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClient;
+
+@Service
+@Transactional(rollbackFor = Exception.class)
+public class InboundServiceImpl implements InboundService {
+
+    /** 계좌별 입고 내역의 정렬 키(화면 머리글) → 정렬 열. 여기 없는 키는 무시한다. */
+    private static final Map<String, String> ACCOUNT_INBOUND_SORT_COLUMNS =
+            Map.of(
+                    "productName", "fp.name",
+                    "requestedQty", "i.requested_qty",
+                    "snapshotQty", "im.snapshot_qty",
+                    "currentHoldingAtRequest", "i.current_holding_at_request",
+                    "approvedQty", "i.approved_qty",
+                    "sourceBroker", "id.source_broker",
+                    "processedAt", "i.processed_at");
+
+    private final InboundMapper inboundMapper;
+    private final ForeignProductMapper foreignProductMapper;
+    private final AccountMapper accountMapper;
+    private final SellOrderMapper sellOrderMapper;
+    private final RestClient restClient;
+    private final BusinessClockService businessClockService;
+    private final AuditLogService auditLogService;
+
+    public InboundServiceImpl(
+            InboundMapper inboundMapper,
+            ForeignProductMapper foreignProductMapper,
+            AccountMapper accountMapper,
+            SellOrderMapper sellOrderMapper,
+            @Qualifier("returnSecuritiesRestClient") RestClient restClient,
+            BusinessClockService businessClockService,
+            AuditLogService auditLogService) {
+        this.inboundMapper = inboundMapper;
+        this.foreignProductMapper = foreignProductMapper;
+        this.accountMapper = accountMapper;
+        this.sellOrderMapper = sellOrderMapper;
+        this.restClient = restClient;
+        this.businessClockService = businessClockService;
+        this.auditLogService = auditLogService;
+    }
+
+    @Override
+    public InboundResponseDTO processInbound(Long actorAdminId, InboundRequestDTO request) {
+
+        Long accountId = request.getAccountId();
+        Long foreignProductId = request.getForeignProductId();
+        BigDecimal requestedQty = request.getRequestedQty();
+        BigDecimal currentHoldingAtRequest = request.getCurrentHoldingAtRequest();
+
+        AccountDTO account =
+                accountMapper
+                        .selectByAccountId(accountId)
+                        .orElseThrow(
+                                () -> new AppException(ErrorType.ACCOUNT_NOT_FOUND, accountId));
+        if (!account.getStatus().canTrade()) {
+            throw new AppException(ErrorType.ACCOUNT_STATE_NOT_ALLOWED, account.getStatus());
+        }
+        Long customerId = account.getCustomerId();
+
+        String ciHash =
+                accountMapper
+                        .selectCiHashByCustomerId(customerId)
+                        .orElseThrow(
+                                () ->
+                                        new AppException(
+                                                ErrorType.ACCOUNT_CUSTOMER_IDENTITY_NOT_FOUND,
+                                                customerId));
+
+        ApiResponseDTO<RegistrableStockResponseDTO> apiResponse =
+                restClient
+                        .get()
+                        .uri(
+                                "/api/registrable-stocks?ciHash={ciHash}&foreignProductId={foreignProductId}",
+                                ciHash,
+                                foreignProductId)
+                        .retrieve()
+                        .body(
+                                new ParameterizedTypeReference<
+                                        ApiResponseDTO<RegistrableStockResponseDTO>>() {});
+
+        if (apiResponse == null || apiResponse.getData() == null) {
+            throw new AppException(
+                    ErrorType.REGISTRABLE_STOCK_NOT_FOUND, ciHash + "/" + foreignProductId);
+        }
+
+        RegistrableStockResponseDTO registrableStock = apiResponse.getData();
+        BigDecimal snapshotQty = registrableStock.getHeldQty();
+
+        BigDecimal alreadyApprovedQty =
+                inboundMapper.sumApprovedQtyByAccountAndProduct(accountId, foreignProductId);
+        BigDecimal alreadyOutboundedQty =
+                inboundMapper.sumOutboundQtyByAccountAndProduct(accountId, foreignProductId);
+        BigDecimal availableQty =
+                snapshotQty
+                        .subtract(alreadyApprovedQty.subtract(alreadyOutboundedQty))
+                        .max(BigDecimal.ZERO);
+
+        BigDecimal approvedQty = requestedQty.min(availableQty);
+        if (currentHoldingAtRequest != null) {
+            approvedQty = approvedQty.min(currentHoldingAtRequest);
+        }
+
+        InboundZeroApprovalReason zeroApprovalReason = null;
+        if (approvedQty.compareTo(BigDecimal.ZERO) == 0) {
+            if (requestedQty.compareTo(BigDecimal.ZERO) == 0) {
+                zeroApprovalReason = InboundZeroApprovalReason.REQUESTED_ZERO;
+            } else if (availableQty.compareTo(BigDecimal.ZERO) <= 0) {
+                zeroApprovalReason = InboundZeroApprovalReason.SNAPSHOT_QUANTITY_EXHAUSTED;
+            } else if (currentHoldingAtRequest != null
+                    && currentHoldingAtRequest.compareTo(BigDecimal.ZERO) <= 0) {
+                zeroApprovalReason = InboundZeroApprovalReason.CURRENT_HOLDING_INSUFFICIENT;
+            }
+        }
+
+        InboundDTO inboundDTO =
+                InboundDTO.builder()
+                        .accountId(accountId)
+                        .requestedQty(requestedQty)
+                        .currentHoldingAtRequest(currentHoldingAtRequest)
+                        .approvedQty(approvedQty)
+                        .processedAt(businessClockService.now())
+                        .build();
+        inboundMapper.insertInbound(inboundDTO);
+
+        List<RegistrableStockResponseDTO> lots =
+                fetchRegistrableStockLots(ciHash, foreignProductId);
+        Map<Long, BigDecimal> approvedByAccount =
+                inboundMapper
+                        .sumApprovedQtyBySourceGeneralAccount(accountId, foreignProductId)
+                        .stream()
+                        .collect(
+                                Collectors.toMap(
+                                        SourceLotApprovedQtyDTO::getGeneralAccountId,
+                                        SourceLotApprovedQtyDTO::getApprovedQty));
+        Map<Long, BigDecimal> outboundedByAccount =
+                inboundMapper
+                        .sumOutboundQtyBySourceGeneralAccount(accountId, foreignProductId)
+                        .stream()
+                        .collect(
+                                Collectors.toMap(
+                                        SourceLotApprovedQtyDTO::getGeneralAccountId,
+                                        SourceLotApprovedQtyDTO::getApprovedQty));
+        // netLocked per source account = approved - outbounded (재입고를 위해 출고분을 차감)
+        Map<Long, BigDecimal> remainingAlreadyUsedByAccount =
+                approvedByAccount.entrySet().stream()
+                        .collect(
+                                Collectors.toMap(
+                                        Map.Entry::getKey,
+                                        e ->
+                                                e.getValue()
+                                                        .subtract(
+                                                                outboundedByAccount.getOrDefault(
+                                                                        e.getKey(),
+                                                                        BigDecimal.ZERO))
+                                                        .max(BigDecimal.ZERO)));
+
+        BigDecimal remaining = approvedQty;
+        boolean anyDetailCreated = false;
+        for (RegistrableStockResponseDTO lot : lots) {
+            Long generalAccountId = lot.getGeneralAccountId();
+            BigDecimal alreadyUsed =
+                    remainingAlreadyUsedByAccount.getOrDefault(generalAccountId, BigDecimal.ZERO);
+            // 같은 general_account의 lot이 여러 개일 때 alreadyUsed를 lot마다 중복
+            // 차감하지 않도록, 이번 lot에서 실제로 소진한 만큼만 계좌 잔여분에서 빼고
+            // 남은 alreadyUsed는 다음 lot으로 이월한다.
+            BigDecimal consumedByThisLot = alreadyUsed.min(lot.getHeldQty());
+            remainingAlreadyUsedByAccount.put(
+                    generalAccountId, alreadyUsed.subtract(consumedByThisLot));
+            BigDecimal lotAvailable = lot.getHeldQty().subtract(consumedByThisLot);
+
+            BigDecimal lotQty = BigDecimal.ZERO;
+            if (remaining.compareTo(BigDecimal.ZERO) > 0
+                    && lotAvailable.compareTo(BigDecimal.ZERO) > 0) {
+                lotQty = remaining.min(lotAvailable);
+            }
+
+            if (lotQty.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+
+            insertInboundDetailAndMin(
+                    inboundDTO.getInboundId(),
+                    foreignProductId,
+                    lot,
+                    lotQty,
+                    requestedQty,
+                    snapshotQty);
+            anyDetailCreated = true;
+            remaining = remaining.subtract(lotQty);
+        }
+
+        if (!anyDetailCreated) {
+            RegistrableStockResponseDTO fallbackLot = lots.isEmpty() ? null : lots.get(0);
+            insertInboundDetailAndMin(
+                    inboundDTO.getInboundId(),
+                    foreignProductId,
+                    fallbackLot,
+                    BigDecimal.ZERO,
+                    requestedQty,
+                    snapshotQty);
+        }
+
+        InboundAuditLogReasonCode reasonCode =
+                zeroApprovalReason != null
+                        ? InboundAuditLogReasonCode.INBOUND_ZERO_APPROVED
+                        : InboundAuditLogReasonCode.INBOUND_APPROVED;
+        String afterValue =
+                zeroApprovalReason != null
+                        ? approvedQty + "(" + zeroApprovalReason.name() + ")"
+                        : String.valueOf(approvedQty);
+        auditLogService.log(
+                AuditLogDTO.builder()
+                        .adminId(actorAdminId)
+                        .targetTable("INBOUND")
+                        .targetPk(String.valueOf(inboundDTO.getInboundId()))
+                        .afterValue(afterValue)
+                        .reasonCode(reasonCode.name())
+                        .build());
+
+        return InboundResponseDTO.of(inboundDTO, snapshotQty, zeroApprovalReason);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AccountHoldingResponseDTO> getHoldings(Long accountId) {
+        return inboundMapper.selectHoldingsByAccount(accountId).stream()
+                .map(
+                        holding -> {
+                            ForeignProductDTO product =
+                                    foreignProductMapper
+                                            .selectById(holding.getForeignProductId())
+                                            .orElseThrow(
+                                                    () ->
+                                                            new AppException(
+                                                                    ErrorType
+                                                                            .FOREIGN_PRODUCT_NOT_FOUND,
+                                                                    holding.getForeignProductId()));
+                            return new AccountHoldingResponseDTO(product, holding.getCurrentQty());
+                        })
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public InboundSummaryResponseDTO getSummary() {
+        LocalDate today = businessClockService.now().toLocalDate();
+        LocalDate tomorrow = today.plusDays(1);
+        return new InboundSummaryResponseDTO(inboundMapper.selectTodaySummary(today, tomorrow));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public InboundPageDTO getInbounds(int page, int size) {
+        int offset = page * size;
+        List<InboundListDTO> content = inboundMapper.selectInbounds(offset, size);
+        attachLots(content);
+
+        long totalElements = inboundMapper.countInbounds();
+        int totalPages = (int) Math.ceil((double) totalElements / size);
+
+        return InboundPageDTO.builder()
+                .content(content)
+                .page(page)
+                .size(size)
+                .totalElements(totalElements)
+                .totalPages(totalPages)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponseDTO<InboundAccountSummaryResponseDTO> getAccountsWithInbounds(
+            int page, int size, String keyword) {
+        int offset = page * size;
+        List<InboundAccountSummaryResponseDTO> content =
+                inboundMapper.selectAccountsWithInbounds(offset, size, keyword).stream()
+                        .map(InboundAccountSummaryResponseDTO::new)
+                        .toList();
+        int totalCount = inboundMapper.countAccountsWithInbounds(keyword);
+        return PageResponseDTO.of(content, totalCount, page, size);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public InboundPageDTO getInboundsByAccount(
+            Long accountId, String sort, String direction, int page, int size) {
+        int offset = page * size;
+        String orderBy =
+                OrderBySpec.resolve(
+                        ACCOUNT_INBOUND_SORT_COLUMNS, sort, direction, "i.processed_at DESC");
+        List<InboundListDTO> content =
+                inboundMapper.selectInboundsByAccountIdOrdered(accountId, orderBy, offset, size);
+        attachLots(content);
+
+        long totalElements = inboundMapper.countInboundsByAccountId(accountId);
+        int totalPages = (int) Math.ceil((double) totalElements / size);
+
+        return InboundPageDTO.builder()
+                .content(content)
+                .page(page)
+                .size(size)
+                .totalElements(totalElements)
+                .totalPages(totalPages)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<InboundPriorApprovalResponseDTO> getPriorApprovals(Long inboundId) {
+        return inboundMapper.selectPriorApprovals(inboundId).stream()
+                .map(InboundPriorApprovalResponseDTO::new)
+                .toList();
+    }
+
+    private void attachLots(List<InboundListDTO> content) {
+        List<Long> inboundIds = content.stream().map(InboundListDTO::getInboundId).toList();
+        List<InboundLotDTO> lots =
+                inboundIds.isEmpty() ? List.of() : inboundMapper.selectLotsByInboundIds(inboundIds);
+
+        List<Long> inboundDetailIds = lots.stream().map(InboundLotDTO::getInboundDetailId).toList();
+        Map<Long, List<InboundSellHistoryDTO>> sellHistoryByDetailId =
+                inboundDetailIds.isEmpty()
+                        ? Map.of()
+                        : sellOrderMapper
+                                .selectSellOrdersByInboundDetailIds(inboundDetailIds)
+                                .stream()
+                                .map(this::toSellHistoryDTO)
+                                .collect(
+                                        Collectors.groupingBy(
+                                                InboundSellHistoryDTO::getInboundDetailId));
+        lots.forEach(
+                lot ->
+                        lot.setSellHistory(
+                                sellHistoryByDetailId.getOrDefault(
+                                        lot.getInboundDetailId(), List.of())));
+
+        Map<Long, List<InboundLotDTO>> lotsByInboundId =
+                lots.stream().collect(Collectors.groupingBy(InboundLotDTO::getInboundId));
+        content.forEach(
+                item -> item.setLots(lotsByInboundId.getOrDefault(item.getInboundId(), List.of())));
+    }
+
+    private InboundSellHistoryDTO toSellHistoryDTO(SellOrderDTO sellOrderDTO) {
+        return InboundSellHistoryDTO.builder()
+                .inboundDetailId(sellOrderDTO.getInboundDetailId())
+                .sellQty(sellOrderDTO.getSellQty())
+                .basePrice(sellOrderDTO.getBasePrice())
+                .status(sellOrderDTO.getStatus())
+                .processedAt(sellOrderDTO.getProcessedAt())
+                .build();
+    }
+
+    private List<RegistrableStockResponseDTO> fetchRegistrableStockLots(
+            String ciHash, Long foreignProductId) {
+        ApiResponseDTO<List<RegistrableStockResponseDTO>> apiResponse =
+                restClient
+                        .get()
+                        .uri(
+                                "/api/registrable-stocks/lots?ciHash={ciHash}&foreignProductId={foreignProductId}",
+                                ciHash,
+                                foreignProductId)
+                        .retrieve()
+                        .body(
+                                new ParameterizedTypeReference<
+                                        ApiResponseDTO<List<RegistrableStockResponseDTO>>>() {});
+        if (apiResponse == null || apiResponse.getData() == null) {
+            throw new AppException(
+                    ErrorType.REGISTRABLE_STOCK_NOT_FOUND, ciHash + "/" + foreignProductId);
+        }
+        return apiResponse.getData();
+    }
+
+    private void insertInboundDetailAndMin(
+            Long inboundId,
+            Long foreignProductId,
+            RegistrableStockResponseDTO lot,
+            BigDecimal lotQty,
+            BigDecimal requestedQty,
+            BigDecimal snapshotQty) {
+        InboundDetailDTO inboundDetailDTO =
+                InboundDetailDTO.builder()
+                        .inboundId(inboundId)
+                        .foreignProductId(foreignProductId)
+                        .registrableStockId(lot != null ? lot.getRegistrableStockId() : null)
+                        .qty(lotQty)
+                        .currentQty(lotQty)
+                        .recordedAt(businessClockService.now())
+                        .accountType(lot != null ? lot.getAccountType() : null)
+                        .purchaseDate(lot != null ? lot.getPurchaseDate() : null)
+                        .purchasePrice(lot != null ? lot.getPurchasePrice() : null)
+                        .purchaseCurrency(lot != null ? lot.getPurchaseCurrency() : null)
+                        .purchaseFxRate(lot != null ? lot.getPurchaseFxRate() : null)
+                        .sourceBroker(lot != null ? lot.getSourceBroker() : null)
+                        .sourceGeneralAccountId(lot != null ? lot.getGeneralAccountId() : null)
+                        .build();
+        inboundMapper.insertInboundDetail(inboundDetailDTO);
+
+        InboundMinDTO inboundMinDTO =
+                InboundMinDTO.of(
+                        inboundDetailDTO.getInboundDetailId(), requestedQty, lotQty, snapshotQty);
+        inboundMapper.insertInboundMin(inboundMinDTO);
+    }
+}

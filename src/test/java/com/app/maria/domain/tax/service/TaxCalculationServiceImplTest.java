@@ -1,0 +1,961 @@
+package com.app.maria.domain.tax.service;
+
+import static com.app.maria.domain.tax.fixture.TaxFixtures.allSeedRules;
+import static com.app.maria.domain.tax.fixture.TaxFixtures.externalBuy;
+import static com.app.maria.domain.tax.fixture.TaxFixtures.heldLot;
+import static com.app.maria.domain.tax.fixture.TaxFixtures.lot;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+import com.app.maria.domain.account.dto.AccountDTO;
+import com.app.maria.domain.account.mapper.AccountBenefitLogMapper;
+import com.app.maria.domain.account.mapper.AccountMapper;
+import com.app.maria.domain.account.type.BenefitType;
+import com.app.maria.domain.settlement.component.SettlementBusinessDayCalculator;
+import com.app.maria.domain.tax.batch.TaxSnapshotJobLauncher;
+import com.app.maria.domain.tax.dto.ExternalBuyDTO;
+import com.app.maria.domain.tax.dto.SellLotDTO;
+import com.app.maria.domain.tax.dto.TaxBreakdownDTO;
+import com.app.maria.domain.tax.dto.TaxCalculationDTO;
+import com.app.maria.domain.tax.dto.TaxCalculationResultDTO;
+import com.app.maria.domain.tax.dto.TaxPeriodBreakdownDTO;
+import com.app.maria.domain.tax.dto.TaxRuleDTO;
+import com.app.maria.domain.tax.dto.TaxSnapshotDTO;
+import com.app.maria.domain.tax.dto.response.CustomerTaxBasisResponseDTO;
+import com.app.maria.domain.tax.dto.response.TaxCalculationPreviewResponseDTO;
+import com.app.maria.domain.tax.dto.response.TaxCalculationSaveResponseDTO;
+import com.app.maria.domain.tax.dto.response.TaxExpectedReliefResponseDTO;
+import com.app.maria.domain.tax.dto.response.TaxSnapshotResponseDTO;
+import com.app.maria.domain.tax.mapper.TaxMapper;
+import com.app.maria.domain.tax.mapper.TaxSnapshotMapper;
+import com.app.maria.domain.tax.type.TaxAuditLogReasonCode;
+import com.app.maria.domain.tax.type.TaxBasisType;
+import com.app.maria.global.audit.dto.AuditLogDTO;
+import com.app.maria.global.audit.provider.AuditActorProvider;
+import com.app.maria.global.audit.service.AuditLogService;
+import com.app.maria.global.client.exchange.ExchangeRateClient;
+import com.app.maria.global.client.kis.KisPriceClient;
+import com.app.maria.global.clock.service.BusinessClockService;
+import com.app.maria.global.config.properties.RiaTaxProperties;
+import com.app.maria.global.exception.AppException;
+import com.app.maria.global.exception.ErrorType;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
+
+@ExtendWith(MockitoExtension.class)
+class TaxCalculationServiceImplTest {
+
+    private static final Long ACCOUNT_ID = 1L;
+    private static final int TAX_YEAR = 2026;
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 4, 9, 0);
+
+    @Mock TaxMapper taxMapper;
+
+    @Mock AccountMapper accountMapper;
+
+    @Mock AccountBenefitLogMapper accountBenefitLogMapper;
+
+    @Mock BusinessClockService clockService;
+
+    @Mock RiaTaxProperties riaTaxProperties;
+
+    @Mock TaxSnapshotMapper taxSnapshotMapper;
+
+    @Mock TaxSnapshotJobLauncher taxSnapshotJobLauncher;
+
+    @Mock AuditLogService auditLogService;
+
+    @Mock AuditActorProvider auditActorProvider;
+
+    @Spy TaxCalculator taxCalculator = new TaxCalculator();
+
+    @Mock TaxBreakdownAssembler taxBreakdownAssembler;
+
+    @Mock KisPriceClient kisPriceClient;
+
+    @Mock ExchangeRateClient exchangeRateClient;
+
+    @Mock SettlementBusinessDayCalculator settlementBusinessDayCalculator;
+
+    @Mock TaxExpectedSnapshotReader expectedSnapshotReader;
+
+    @InjectMocks TaxCalculationServiceImpl taxCalculationService;
+
+    @Test
+    @DisplayName("조회한 lot과 규칙을 계산기에 넘겨 결과를 응답으로 감싼다")
+    void 정상_계산() {
+        stubAccount();
+        stubTaxYearAndClock();
+        when(taxMapper.selectFinalizedLotsByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(
+                        List.of(lot(LocalDate.of(2026, 3, 10), "30000000", "100", "1000", "100")));
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(List.of(externalBuy(LocalDate.of(2026, 6, 15), "10000000")));
+
+        TaxCalculationPreviewResponseDTO response = taxCalculationService.taxCalculate(ACCOUNT_ID);
+
+        assertThat(response.getAccountId()).isEqualTo(ACCOUNT_ID);
+        assertThat(response.getTaxCalculationResultDTO().getWeightedSell())
+                .isEqualByComparingTo("30000000");
+        assertThat(response.getTaxCalculationResultDTO().getWeightedGain())
+                .isEqualByComparingTo("20000000");
+        assertThat(response.getTaxCalculationResultDTO().getOriginalGainAmount())
+                .isEqualByComparingTo("20000000");
+        assertThat(response.getTaxCalculationResultDTO().getWeightedExternalAmount())
+                .isEqualByComparingTo("8000000");
+        assertThat(response.getTaxCalculationResultDTO().getAdjustRatio())
+                .isEqualByComparingTo("0.7333");
+        assertThat(response.getTaxCalculationResultDTO().getFinalDeduction())
+                .isEqualByComparingTo("14666000.00");
+        assertThat(response.getTaxCalculationResultDTO().getFinalTax())
+                .isEqualByComparingTo("623480.00");
+    }
+
+    @Test
+    @DisplayName("계좌가 없으면 예외를 던지고 이후 조회를 하지 않는다")
+    void 계좌없음() {
+        when(accountMapper.selectByAccountId(ACCOUNT_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> taxCalculationService.taxCalculate(ACCOUNT_ID))
+                .isInstanceOf(AppException.class)
+                .hasMessage(ErrorType.ACCOUNT_NOT_FOUND.getMessage());
+
+        verifyNoInteractions(taxMapper, taxCalculator);
+        verify(clockService, never()).now();
+    }
+
+    @Test
+    @DisplayName("과세연도와 업무 기준시각을 lot 조회 조건으로 그대로 전달한다")
+    void 조회조건_전달() {
+        stubAccount();
+        stubTaxYearAndClock();
+        when(taxMapper.selectFinalizedLotsByAccountIdsAndYear(anyList(), anyInt(), any()))
+                .thenReturn(List.of());
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(anyList(), anyInt(), any()))
+                .thenReturn(List.of());
+
+        taxCalculationService.taxCalculate(ACCOUNT_ID);
+
+        verify(taxMapper)
+                .selectFinalizedLotsByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW);
+        verify(taxMapper).selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW);
+    }
+
+    @Test
+    @DisplayName("조회 결과를 가공 없이 계산기에 전달한다")
+    void 계산기_인자_전달() {
+        stubAccount();
+        stubTaxYearAndClock();
+        List<SellLotDTO> lots =
+                List.of(lot(LocalDate.of(2026, 6, 15), "10000000", "100", "1000", "40"));
+        List<TaxRuleDTO> rules = allSeedRules();
+        List<ExternalBuyDTO> external = List.of(externalBuy(LocalDate.of(2026, 3, 10), "5000000"));
+        when(taxMapper.selectFinalizedLotsByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(lots);
+        when(taxMapper.selectTaxRules()).thenReturn(rules);
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(external);
+
+        taxCalculationService.taxCalculate(ACCOUNT_ID);
+
+        ArgumentCaptor<List<SellLotDTO>> lotCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<TaxRuleDTO>> ruleCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<ExternalBuyDTO>> externalCaptor = ArgumentCaptor.forClass(List.class);
+        verify(taxCalculator)
+                .calculate(
+                        lotCaptor.capture(),
+                        ruleCaptor.capture(),
+                        externalCaptor.capture(),
+                        anyBoolean());
+
+        assertThat(lotCaptor.getValue()).isSameAs(lots);
+        assertThat(ruleCaptor.getValue()).isSameAs(rules);
+        assertThat(externalCaptor.getValue()).isSameAs(external);
+    }
+
+    @Test
+    @DisplayName("매도 이력이 없으면 전부 0으로 응답한다")
+    void 매도없음() {
+        stubAccount();
+        stubTaxYearAndClock();
+        when(taxMapper.selectFinalizedLotsByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(List.of());
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(List.of());
+
+        TaxCalculationPreviewResponseDTO response = taxCalculationService.taxCalculate(ACCOUNT_ID);
+
+        assertThat(response.getTaxCalculationResultDTO().getWeightedSell())
+                .isEqualByComparingTo("0");
+        assertThat(response.getTaxCalculationResultDTO().getWeightedGain())
+                .isEqualByComparingTo("0");
+        assertThat(response.getTaxCalculationResultDTO().getOriginalGainAmount())
+                .isEqualByComparingTo("0");
+        assertThat(response.getTaxCalculationResultDTO().getWeightedExternalAmount())
+                .isEqualByComparingTo("0");
+    }
+
+    private void stubAccount() {
+        stubAccount(null);
+    }
+
+    private void stubAccount(BenefitType benefit) {
+        when(accountMapper.selectByAccountId(ACCOUNT_ID)).thenReturn(Optional.of(account(benefit)));
+        lenient()
+                .when(accountBenefitLogMapper.selectLatestByAccountId(ACCOUNT_ID))
+                .thenReturn(Optional.empty());
+    }
+
+    private static AccountDTO account(BenefitType benefit) {
+        AccountDTO account = new AccountDTO();
+        account.setAccountId(ACCOUNT_ID);
+        account.setBenefit(benefit);
+        return account;
+    }
+
+    private void stubTaxYearAndClock() {
+        when(riaTaxProperties.getYear()).thenReturn(TAX_YEAR);
+        when(clockService.now()).thenReturn(NOW);
+    }
+
+    @Test
+    @DisplayName("혜택 배제 계좌면 계산기에 배제 플래그를 넘긴다")
+    void 혜택배제_전달() {
+        stubAccount(BenefitType.IMPOSSIBLE);
+        stubTaxYearAndClock();
+        when(taxMapper.selectFinalizedLotsByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(
+                        List.of(lot(LocalDate.of(2026, 3, 10), "30000000", "100", "1000", "100")));
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(List.of());
+
+        TaxCalculationPreviewResponseDTO response = taxCalculationService.taxCalculate(ACCOUNT_ID);
+
+        verify(taxCalculator).calculate(any(), any(), any(), eq(true));
+        assertThat(response.getTaxCalculationResultDTO().getFinalDeduction())
+                .isEqualByComparingTo("0");
+        assertThat(response.getTaxCalculationResultDTO().getFinalTax())
+                .isEqualByComparingTo("3850000.00");
+    }
+
+    @Test
+    @DisplayName("혜택 상태가 POSSIBLE이면 배제 플래그는 false다")
+    void 정상계좌는_배제아님() {
+        stubAccount(BenefitType.POSSIBLE);
+        stubTaxYearAndClock();
+        when(taxMapper.selectFinalizedLotsByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(
+                        List.of(lot(LocalDate.of(2026, 3, 10), "30000000", "100", "1000", "100")));
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(List.of());
+
+        taxCalculationService.taxCalculate(ACCOUNT_ID);
+
+        verify(taxCalculator).calculate(any(), any(), any(), eq(false));
+    }
+
+    @Test
+    @DisplayName("혜택 상태가 없어도(null) 배제로 보지 않는다")
+    void 혜택상태_null이면_배제아님() {
+        stubAccount();
+        stubTaxYearAndClock();
+        when(taxMapper.selectFinalizedLotsByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(
+                        List.of(lot(LocalDate.of(2026, 3, 10), "30000000", "100", "1000", "100")));
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(List.of());
+
+        taxCalculationService.taxCalculate(ACCOUNT_ID);
+
+        verify(taxCalculator).calculate(any(), any(), any(), eq(false));
+    }
+
+    private void stubGoldenCalculation() {
+        stubTaxYearAndClock();
+        when(taxMapper.selectFinalizedLotsByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(
+                        List.of(
+                                lot(LocalDate.of(2026, 3, 10), "30000000", "100", "1000", "100"),
+                                lot(LocalDate.of(2026, 6, 15), "10000000", "100", "1000", "40"),
+                                lot(LocalDate.of(2026, 9, 20), "10000000", "100", "1000", "40")));
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(
+                        List.of(
+                                externalBuy(LocalDate.of(2026, 6, 15), "20000000"),
+                                externalBuy(LocalDate.of(2026, 9, 20), "-10000000")));
+    }
+
+    private TaxCalculationDTO captureSaved() {
+        ArgumentCaptor<TaxCalculationDTO> captor = ArgumentCaptor.forClass(TaxCalculationDTO.class);
+        verify(taxMapper).insertCalculation(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    @DisplayName("확정신고 행이 없으면 FINAL_REPORT로 저장한다")
+    void 확정신고_저장() {
+        stubAccount(BenefitType.POSSIBLE);
+        stubGoldenCalculation();
+        when(taxMapper.existsByAccountAndBasis(ACCOUNT_ID, TaxBasisType.FINAL_REPORT))
+                .thenReturn(false);
+
+        TaxCalculationSaveResponseDTO response = taxCalculationService.calculateAndSave(ACCOUNT_ID);
+
+        assertThat(captureSaved().getBasisType()).isEqualTo(TaxBasisType.FINAL_REPORT);
+        assertThat(response.getBasisType()).isEqualTo(TaxBasisType.FINAL_REPORT);
+    }
+
+    @Test
+    @DisplayName("계산 결과가 저장 DTO의 각 컬럼으로 매핑된다")
+    void 저장값_매핑() {
+        stubAccount(BenefitType.POSSIBLE);
+        stubGoldenCalculation();
+        when(taxMapper.existsByAccountAndBasis(ACCOUNT_ID, TaxBasisType.FINAL_REPORT))
+                .thenReturn(false);
+
+        taxCalculationService.calculateAndSave(ACCOUNT_ID);
+
+        TaxCalculationDTO saved = captureSaved();
+        assertThat(saved.getAccountId()).isEqualTo(ACCOUNT_ID);
+        assertThat(saved.getCalculatedAt()).isEqualTo(NOW);
+        assertThat(saved.getWeightedSell()).isEqualByComparingTo("43000000");
+        assertThat(saved.getOriginalGainAmount()).isEqualByComparingTo("32000000");
+        assertThat(saved.getWeightedGain()).isEqualByComparingTo("27800000");
+        assertThat(saved.getWeightedExternalAmount()).isEqualByComparingTo("11000000");
+        assertThat(saved.getAdjustRatio()).isEqualByComparingTo("0.7442");
+        assertThat(saved.getFinalDeduction()).isEqualByComparingTo("20688760.00");
+        assertThat(saved.getFinalTax()).isEqualByComparingTo("1938472.80");
+    }
+
+    @Test
+    @DisplayName("저장한 값이 그대로 응답으로 나간다")
+    void 응답_매핑() {
+        stubAccount(BenefitType.POSSIBLE);
+        stubGoldenCalculation();
+        when(taxMapper.existsByAccountAndBasis(ACCOUNT_ID, TaxBasisType.FINAL_REPORT))
+                .thenReturn(false);
+
+        TaxCalculationSaveResponseDTO response = taxCalculationService.calculateAndSave(ACCOUNT_ID);
+
+        TaxCalculationDTO saved = captureSaved();
+        assertThat(response.getAccountId()).isEqualTo(saved.getAccountId());
+        assertThat(response.getCalculatedAt()).isEqualTo(saved.getCalculatedAt());
+        assertThat(response.getAdjustRatio()).isEqualByComparingTo(saved.getAdjustRatio());
+        assertThat(response.getFinalDeduction()).isEqualByComparingTo(saved.getFinalDeduction());
+        assertThat(response.getFinalTax()).isEqualByComparingTo(saved.getFinalTax());
+    }
+
+    @Test
+    @DisplayName("확정신고 후 혜택이 배제되면 EARLY_WITHDRAWAL_CLAWBACK으로 저장한다")
+    void 조기인출_정정_저장() {
+        stubAccount(BenefitType.IMPOSSIBLE);
+        stubGoldenCalculation();
+        when(taxMapper.existsByAccountAndBasis(ACCOUNT_ID, TaxBasisType.FINAL_REPORT))
+                .thenReturn(true);
+        when(taxMapper.existsByAccountAndBasis(ACCOUNT_ID, TaxBasisType.EARLY_WITHDRAWAL_CLAWBACK))
+                .thenReturn(false);
+
+        taxCalculationService.calculateAndSave(ACCOUNT_ID);
+
+        TaxCalculationDTO saved = captureSaved();
+        assertThat(saved.getBasisType()).isEqualTo(TaxBasisType.EARLY_WITHDRAWAL_CLAWBACK);
+        assertThat(saved.getAdjustRatio()).isEqualByComparingTo("0");
+        assertThat(saved.getFinalDeduction()).isEqualByComparingTo("0");
+        assertThat(saved.getFinalTax()).isEqualByComparingTo("6490000.00");
+        assertThat(saved.getWeightedGain()).isEqualByComparingTo("27800000");
+    }
+
+    @Test
+    @DisplayName("확정신고가 있는데 혜택이 유지 중이면 중복으로 보고 막는다")
+    void 확정신고_중복() {
+        stubAccount(BenefitType.POSSIBLE);
+        when(taxMapper.existsByAccountAndBasis(ACCOUNT_ID, TaxBasisType.FINAL_REPORT))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> taxCalculationService.calculateAndSave(ACCOUNT_ID))
+                .isInstanceOf(AppException.class)
+                .hasFieldOrPropertyWithValue("errorType", ErrorType.TAX_FINAL_REPORT_ALREADY_EXISTS)
+                .hasFieldOrPropertyWithValue("errorData", ACCOUNT_ID);
+
+        verify(taxMapper, never()).insertCalculation(any());
+    }
+
+    @Test
+    @DisplayName("혜택이 축소(REDUCED)된 계좌도 확정신고가 있으면 막는다")
+    void 확정신고_중복_reduced() {
+        stubAccount(BenefitType.REDUCED);
+        when(taxMapper.existsByAccountAndBasis(ACCOUNT_ID, TaxBasisType.FINAL_REPORT))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> taxCalculationService.calculateAndSave(ACCOUNT_ID))
+                .isInstanceOf(AppException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorType", ErrorType.TAX_FINAL_REPORT_ALREADY_EXISTS);
+
+        verify(taxMapper, never()).insertCalculation(any());
+    }
+
+    @Test
+    @DisplayName("이미 정정 처리된 계좌는 다시 저장하지 않는다")
+    void 정정_중복() {
+        stubAccount(BenefitType.IMPOSSIBLE);
+        when(taxMapper.existsByAccountAndBasis(ACCOUNT_ID, TaxBasisType.FINAL_REPORT))
+                .thenReturn(true);
+        when(taxMapper.existsByAccountAndBasis(ACCOUNT_ID, TaxBasisType.EARLY_WITHDRAWAL_CLAWBACK))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> taxCalculationService.calculateAndSave(ACCOUNT_ID))
+                .isInstanceOf(AppException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorType", ErrorType.TAX_EARLY_WITHDRAWAL_CLAWBACK_ALREADY_EXISTS)
+                .hasFieldOrPropertyWithValue("errorData", ACCOUNT_ID);
+
+        verify(taxMapper, never()).insertCalculation(any());
+    }
+
+    @Test
+    @DisplayName("계좌가 없으면 저장하지 않고 예외를 던진다")
+    void 저장_계좌없음() {
+        when(accountMapper.selectByAccountId(ACCOUNT_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> taxCalculationService.calculateAndSave(ACCOUNT_ID))
+                .isInstanceOf(AppException.class)
+                .hasMessage(ErrorType.ACCOUNT_NOT_FOUND.getMessage());
+
+        verify(taxMapper, never()).insertCalculation(any());
+        verifyNoInteractions(taxCalculator);
+    }
+
+    @Test
+    @DisplayName("미리보기는 저장하지 않는다")
+    void 미리보기는_저장안함() {
+        stubAccount(BenefitType.POSSIBLE);
+        stubGoldenCalculation();
+
+        taxCalculationService.taxCalculate(ACCOUNT_ID);
+
+        verify(taxMapper, never()).insertCalculation(any());
+        verify(taxMapper, never()).existsByAccountAndBasis(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("동시 요청으로 UNIQUE 제약에 걸리면 500이 아니라 409로 바꾼다")
+    void 동시요청_중복저장() {
+        stubAccount(BenefitType.POSSIBLE);
+        stubGoldenCalculation();
+        // existsByAccountAndBasis로는 중복이 없다고 판정됐지만, 그 사이 동시 요청이 먼저 INSERT해
+        // UNIQUE 제약(uk_tax_calc__account_basis) 위반이 발생한 상황을 재현한다.
+        // DuplicateKeyException을 그대로 던지지 않고 AppException(409, TAX_FINAL_REPORT_ALREADY_EXISTS)으로
+        // 변환해서 던지는지 검증하는 것이 이 테스트의 목적.
+        when(taxMapper.existsByAccountAndBasis(ACCOUNT_ID, TaxBasisType.FINAL_REPORT))
+                .thenReturn(false);
+        doThrow(new DuplicateKeyException("uk_tax_calc__account_basis"))
+                .when(taxMapper)
+                .insertCalculation(any());
+
+        assertThatThrownBy(() -> taxCalculationService.calculateAndSave(ACCOUNT_ID))
+                .isInstanceOf(AppException.class)
+                .hasFieldOrPropertyWithValue("errorType", ErrorType.TAX_FINAL_REPORT_ALREADY_EXISTS)
+                .hasFieldOrPropertyWithValue("errorData", ACCOUNT_ID);
+    }
+
+    @Test
+    @DisplayName("저장 중 다른 DB 예외는 그대로 전파한다")
+    void 다른_DB예외는_그대로() {
+        stubAccount(BenefitType.POSSIBLE);
+        stubGoldenCalculation();
+        when(taxMapper.existsByAccountAndBasis(ACCOUNT_ID, TaxBasisType.FINAL_REPORT))
+                .thenReturn(false);
+        doThrow(new DataIntegrityViolationException("not null 위반"))
+                .when(taxMapper)
+                .insertCalculation(any());
+
+        assertThatThrownBy(() -> taxCalculationService.calculateAndSave(ACCOUNT_ID))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("스냅샷 조회 결과를 필드별로 정확히 응답 DTO로 옮긴다(필드 뒤바뀜 방지)")
+    void 스냅샷조회_필드매핑() {
+        LocalDateTime calculatedAt = LocalDateTime.of(2026, 8, 14, 2, 0);
+        when(taxSnapshotMapper.selectByAccountIds(List.of(1L, 2L)))
+                .thenReturn(
+                        List.of(
+                                TaxSnapshotDTO.builder()
+                                        .snapshotId(99L)
+                                        .accountId(1L)
+                                        .calculatedAt(calculatedAt)
+                                        .weightedSell(new BigDecimal("10"))
+                                        .originalGainAmount(new BigDecimal("20"))
+                                        .weightedGain(new BigDecimal("30"))
+                                        .weightedExternalAmount(new BigDecimal("40"))
+                                        .adjustRatio(new BigDecimal("0.5"))
+                                        .finalDeduction(new BigDecimal("60"))
+                                        .finalTax(new BigDecimal("70"))
+                                        .build()));
+
+        List<TaxSnapshotResponseDTO> result = taxCalculationService.findSnapshots(List.of(1L, 2L));
+
+        assertThat(result)
+                .singleElement()
+                .satisfies(
+                        dto -> {
+                            assertThat(dto.getAccountId()).isEqualTo(1L);
+                            assertThat(dto.getCalculatedAt()).isEqualTo(calculatedAt);
+                            assertThat(dto.getWeightedSell()).isEqualByComparingTo("10");
+                            assertThat(dto.getOriginalGainAmount()).isEqualByComparingTo("20");
+                            assertThat(dto.getWeightedGain()).isEqualByComparingTo("30");
+                            assertThat(dto.getWeightedExternalAmount()).isEqualByComparingTo("40");
+                            assertThat(dto.getAdjustRatio()).isEqualByComparingTo("0.5");
+                            assertThat(dto.getFinalDeduction()).isEqualByComparingTo("60");
+                            assertThat(dto.getFinalTax()).isEqualByComparingTo("70");
+                        });
+    }
+
+    @Test
+    @DisplayName("스냅샷이 없는 계좌는 빈 목록을 돌려준다")
+    void 스냅샷조회_결과없음() {
+        when(taxSnapshotMapper.selectByAccountIds(List.of(999L))).thenReturn(List.of());
+
+        assertThat(taxCalculationService.findSnapshots(List.of(999L))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("응답을 기다리지 않고 배치를 비동기로 실행 요청하며, 감사 로그를 남긴다")
+    void 배치_수동실행() {
+        when(clockService.now()).thenReturn(NOW);
+        when(auditActorProvider.getCurrentAdminId()).thenReturn(99L);
+
+        var response = taxCalculationService.triggerSnapshotBatch();
+
+        assertThat(response.getStatus()).isEqualTo("REQUESTED");
+        assertThat(response.getRunId()).isNotBlank();
+
+        ArgumentCaptor<String> runIdCaptor = ArgumentCaptor.forClass(String.class);
+        verify(taxSnapshotJobLauncher).launchAsync(eq(NOW), runIdCaptor.capture());
+        assertThat(runIdCaptor.getValue()).isEqualTo(response.getRunId());
+
+        ArgumentCaptor<AuditLogDTO> auditLogCaptor = ArgumentCaptor.forClass(AuditLogDTO.class);
+        verify(auditLogService).log(auditLogCaptor.capture());
+        AuditLogDTO auditLog = auditLogCaptor.getValue();
+        assertThat(auditLog.getAdminId()).isEqualTo(99L);
+        assertThat(auditLog.getTargetTable()).isEqualTo("TAX_SNAPSHOT_BATCH");
+        assertThat(auditLog.getTargetPk()).isEqualTo(response.getRunId());
+        assertThat(auditLog.getAfterValue()).isEqualTo("REQUESTED");
+        assertThat(auditLog.getReasonCode())
+                .isEqualTo(TaxAuditLogReasonCode.TAX_SNAPSHOT_BATCH_REQUESTED.name());
+    }
+
+    @Test
+    @DisplayName("보유 lot을 T+2 결제 기준 가정 매도로 변환해 계산기에 넘긴다")
+    void 예상감면세액_가정매도_변환() {
+        stubAccount(BenefitType.POSSIBLE);
+        stubTaxYearAndClock();
+        when(taxMapper.selectHeldLotsByAccountId(ACCOUNT_ID))
+                .thenReturn(List.of(heldLot("AAPL", "NASDAQ", "USD", "100", "1300", "200")));
+        when(settlementBusinessDayCalculator.calculateFinalAt(NOW))
+                .thenReturn(LocalDateTime.of(2026, 8, 6, 0, 0));
+        when(kisPriceClient.getPreviousClose("NAS", "AAPL")).thenReturn(new BigDecimal("150"));
+        when(exchangeRateClient.getBaseRate("USD")).thenReturn(new BigDecimal("1350"));
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(List.of());
+
+        TaxExpectedReliefResponseDTO response =
+                taxCalculationService.previewExpectedRelief(ACCOUNT_ID);
+
+        assertThat(response.getAccountId()).isEqualTo(ACCOUNT_ID);
+        assertThat(response.getExpectedFinalAt()).isEqualTo(LocalDate.of(2026, 8, 6));
+
+        ArgumentCaptor<List<SellLotDTO>> lotCaptor = ArgumentCaptor.forClass(List.class);
+        verify(taxCalculator).calculate(lotCaptor.capture(), any(), any(), anyBoolean());
+        SellLotDTO builtLot = lotCaptor.getValue().get(0);
+        assertThat(builtLot.getFinalAt()).isEqualTo(LocalDate.of(2026, 8, 6));
+        assertThat(builtLot.getSellQty()).isEqualByComparingTo("200");
+        assertThat(builtLot.getPurchasePrice()).isEqualByComparingTo("100");
+        assertThat(builtLot.getPurchaseFxRate()).isEqualByComparingTo("1300");
+        assertThat(builtLot.getFinalAmount()).isEqualByComparingTo("40500000");
+    }
+
+    @Test
+    @DisplayName("같은 종목의 보유 lot이 여러 개여도 현재가·환율 조회는 한 번만 한다")
+    void 예상감면세액_동일종목_가격조회_1회() {
+        stubAccount(BenefitType.POSSIBLE);
+        stubTaxYearAndClock();
+        when(taxMapper.selectHeldLotsByAccountId(ACCOUNT_ID))
+                .thenReturn(
+                        List.of(
+                                heldLot("AAPL", "NASDAQ", "USD", "100", "1300", "50"),
+                                heldLot("AAPL", "NASDAQ", "USD", "110", "1320", "30")));
+        when(settlementBusinessDayCalculator.calculateFinalAt(NOW))
+                .thenReturn(LocalDateTime.of(2026, 8, 6, 0, 0));
+        when(kisPriceClient.getPreviousClose("NAS", "AAPL")).thenReturn(new BigDecimal("150"));
+        when(exchangeRateClient.getBaseRate("USD")).thenReturn(new BigDecimal("1350"));
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(List.of());
+
+        taxCalculationService.previewExpectedRelief(ACCOUNT_ID);
+
+        verify(kisPriceClient, times(1)).getPreviousClose("NAS", "AAPL");
+        verify(exchangeRateClient, times(1)).getBaseRate("USD");
+    }
+
+    @Test
+    @DisplayName("보유 lot이 없으면 외부 가격 조회 없이 빈 목록으로 계산한다")
+    void 예상감면세액_보유lot없음() {
+        stubAccount(BenefitType.POSSIBLE);
+        stubTaxYearAndClock();
+        when(taxMapper.selectHeldLotsByAccountId(ACCOUNT_ID)).thenReturn(List.of());
+        when(settlementBusinessDayCalculator.calculateFinalAt(NOW))
+                .thenReturn(LocalDateTime.of(2026, 8, 6, 0, 0));
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(List.of());
+
+        TaxExpectedReliefResponseDTO response =
+                taxCalculationService.previewExpectedRelief(ACCOUNT_ID);
+
+        verifyNoInteractions(kisPriceClient, exchangeRateClient);
+        assertThat(response.getHoldingCount()).isZero();
+        assertThat(response.getTaxCalculationResultDTO().getWeightedSell())
+                .isEqualByComparingTo("0");
+    }
+
+    @Test
+    @DisplayName("오늘 할 일 요약은 매퍼 집계값을 그대로 응답 DTO에 담는다")
+    void 오늘할일_요약() {
+        when(clockService.now()).thenReturn(NOW);
+        when(taxMapper.countUnconfirmedFinalReport()).thenReturn(10419);
+        when(taxMapper.countUnprocessedClawback()).thenReturn(3);
+        when(taxMapper.countBenefitChangedSince(NOW.toLocalDate().atStartOfDay(), NOW))
+                .thenReturn(7);
+
+        var response = taxCalculationService.getActionSummary();
+
+        assertThat(response.getUnconfirmedFinalReportCount()).isEqualTo(10419);
+        assertThat(response.getUnprocessedClawbackCount()).isEqualTo(3);
+        assertThat(response.getBenefitChangedTodayCount()).isEqualTo(7);
+    }
+
+    @Test
+    void currentBriefingUsesSnapshotWithoutTradesOrPrices() {
+        when(accountMapper.selectByCustomerId(7L))
+                .thenReturn(Optional.of(account(BenefitType.POSSIBLE)));
+        when(taxSnapshotMapper.selectByAccountIds(List.of(ACCOUNT_ID)))
+                .thenReturn(
+                        List.of(
+                                TaxSnapshotDTO.builder()
+                                        .accountId(ACCOUNT_ID)
+                                        .calculatedAt(NOW)
+                                        .originalGainAmount(new BigDecimal("20000000"))
+                                        .finalTax(new BigDecimal("1234500"))
+                                        .build()));
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+
+        var response = taxCalculationService.getCustomerTaxBriefing(7L);
+
+        assertThat(response.getCurrent().getGeneralTax()).isEqualByComparingTo("3850000");
+        assertThat(response.getCurrent().getRiaTax()).isEqualByComparingTo("1234500");
+        assertThat(response.getCurrent().getReliefAmount()).isEqualByComparingTo("2615500");
+        assertThat(response.getCalculatedAt()).isEqualTo(NOW);
+        assertThat(response.getExpected()).isNull();
+        verifyNoInteractions(kisPriceClient, exchangeRateClient, clockService);
+        verify(taxCalculator, never()).calculate(anyList(), anyList(), anyList(), anyBoolean());
+        verify(taxMapper, never())
+                .selectFinalizedLotsByAccountIdsAndYear(anyList(), anyInt(), any());
+        verify(taxMapper, never()).selectHeldLotsByAccountId(anyLong());
+    }
+
+    @Test
+    void missingSnapshotDoesNotFabricateZeroOrRecalculate() {
+        when(accountMapper.selectByCustomerId(7L))
+                .thenReturn(Optional.of(account(BenefitType.POSSIBLE)));
+        when(taxSnapshotMapper.selectByAccountIds(List.of(ACCOUNT_ID))).thenReturn(List.of());
+        assertThatThrownBy(() -> taxCalculationService.getCustomerTaxBriefing(7L))
+                .isInstanceOf(AppException.class)
+                .hasFieldOrPropertyWithValue("errorType", ErrorType.TAX_SNAPSHOT_NOT_FOUND);
+        verifyNoInteractions(taxMapper, kisPriceClient, exchangeRateClient);
+    }
+
+    @Test
+    void customerProjectionCombinesFinalizedAndHeldGainsWithOneBasicDeduction() {
+        stubCustomerProjection(BenefitType.POSSIBLE, "100", true);
+
+        var response = taxCalculationService.getCustomerExpectedTaxBriefing(7L);
+
+        assertThat(response.getGeneralTax()).isEqualByComparingTo("770000");
+        assertThat(response.getRiaTax()).isEqualByComparingTo("110000");
+        assertThat(response.getReliefAmount()).isEqualByComparingTo("660000");
+        assertThat(response.getFinalizedReliefAmount()).isEqualByComparingTo("330000");
+        assertThat(response.getAdditionalReliefAmount()).isEqualByComparingTo("330000");
+        assertThat(response.getHoldingCount()).isEqualTo(1);
+        assertThat(response.getExpectedFinalAt()).isEqualTo(LocalDate.of(2026, 8, 6));
+        verify(expectedSnapshotReader).readCustomer(7L);
+        verify(kisPriceClient, times(1)).getPreviousClose("NAS", "AAPL");
+        verify(exchangeRateClient, times(1)).getBaseRate("USD");
+        verifyNoInteractions(taxMapper, taxSnapshotMapper);
+    }
+
+    @Test
+    void customerProjectionOffsetsHeldLossAndKeepsSignedReliefChange() {
+        stubCustomerProjection(BenefitType.POSSIBLE, "400", true);
+        var response = taxCalculationService.getCustomerExpectedTaxBriefing(7L);
+        assertThat(response.getGeneralTax()).isEqualByComparingTo("110000");
+        assertThat(response.getReliefAmount()).isEqualByComparingTo("110000");
+        assertThat(response.getFinalizedReliefAmount()).isEqualByComparingTo("330000");
+        assertThat(response.getAdditionalReliefAmount()).isEqualByComparingTo("-220000");
+    }
+
+    @Test
+    void customerProjectionWithoutHoldingsKeepsFinalizedTotalsWithoutPriceRequests() {
+        stubCustomerProjection(BenefitType.POSSIBLE, "100", false);
+        var response = taxCalculationService.getCustomerExpectedTaxBriefing(7L);
+        assertThat(response.getGeneralTax()).isEqualByComparingTo("330000");
+        assertThat(response.getReliefAmount()).isEqualByComparingTo("330000");
+        assertThat(response.getAdditionalReliefAmount()).isEqualByComparingTo("0");
+        assertThat(response.getHoldingCount()).isZero();
+        verifyNoInteractions(kisPriceClient, exchangeRateClient);
+    }
+
+    @Test
+    void customerProjectionWithRevokedBenefitHasNoReliefOnEitherComponent() {
+        stubCustomerProjection(BenefitType.IMPOSSIBLE, "100", true);
+        var response = taxCalculationService.getCustomerExpectedTaxBriefing(7L);
+        assertThat(response.getGeneralTax()).isEqualByComparingTo("770000");
+        assertThat(response.getRiaTax()).isEqualByComparingTo("770000");
+        assertThat(response.getReliefAmount()).isEqualByComparingTo("0");
+        assertThat(response.getAdditionalReliefAmount()).isEqualByComparingTo("0");
+    }
+
+    private void stubCustomerProjection(BenefitType benefit, String purchasePrice, boolean held) {
+        lenient().when(clockService.now()).thenReturn(NOW);
+        var holdings =
+                held
+                        ? List.of(heldLot("AAPL", "NASDAQ", "USD", purchasePrice, "100", "100"))
+                        : List.<com.app.maria.domain.tax.dto.HeldLotDTO>of();
+        when(expectedSnapshotReader.readCustomer(7L))
+                .thenReturn(
+                        new TaxExpectedSnapshotReader.Snapshot(
+                                account(benefit),
+                                NOW,
+                                holdings,
+                                List.of(
+                                        lot(
+                                                LocalDate.of(2026, 8, 1),
+                                                "5000000",
+                                                "100",
+                                                "100",
+                                                "100")),
+                                allSeedRules(),
+                                List.of()));
+        when(settlementBusinessDayCalculator.calculateFinalAt(NOW))
+                .thenReturn(LocalDateTime.of(2026, 8, 6, 0, 0));
+        if (held) {
+            when(kisPriceClient.getPreviousClose("NAS", "AAPL")).thenReturn(new BigDecimal("150"));
+            when(exchangeRateClient.getBaseRate("USD")).thenReturn(new BigDecimal("200"));
+        }
+    }
+
+    @Test
+    void customerProjectionRequiresFinalizedCalculationResult() {
+        stubCustomerProjection(BenefitType.POSSIBLE, "100", true);
+        org.mockito.Mockito.doAnswer(
+                        invocation -> {
+                            List<?> lots = invocation.getArgument(0);
+                            return lots.size() == 1 ? null : invocation.callRealMethod();
+                        })
+                .when(taxCalculator)
+                .calculate(anyList(), anyList(), anyList(), anyBoolean());
+        assertThatThrownBy(() -> taxCalculationService.getCustomerExpectedTaxBriefing(7L))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("finalized");
+    }
+
+    @Test
+    void customerWithoutAccountCannotRequestEitherBriefing() {
+        when(accountMapper.selectByCustomerId(7L)).thenReturn(Optional.empty());
+        when(expectedSnapshotReader.readCustomer(7L))
+                .thenThrow(new AppException(ErrorType.ACCOUNT_NOT_FOUND, 7L));
+        assertThatThrownBy(() -> taxCalculationService.getCustomerTaxBriefing(7L))
+                .hasFieldOrPropertyWithValue("errorType", ErrorType.ACCOUNT_NOT_FOUND);
+        assertThatThrownBy(() -> taxCalculationService.getCustomerExpectedTaxBriefing(7L))
+                .hasFieldOrPropertyWithValue("errorType", ErrorType.ACCOUNT_NOT_FOUND);
+        verifyNoInteractions(taxSnapshotMapper, taxMapper, kisPriceClient, exchangeRateClient);
+    }
+
+    @Test
+    @DisplayName("세액 계산 근거: 5단계 중간값과 구간 줄을 지금 입력으로 다시 계산해 한 응답에 담는다")
+    void 계산_근거() {
+        when(accountMapper.selectByCustomerId(7L)).thenReturn(Optional.of(account(null)));
+        stubTaxYearAndClock();
+        when(taxMapper.selectFinalizedLotsByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(
+                        List.of(lot(LocalDate.of(2026, 3, 10), "30000000", "100", "1000", "100")));
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(List.of(externalBuy(LocalDate.of(2026, 6, 15), "10000000")));
+        when(taxBreakdownAssembler.assemble(anyList(), anyList(), anyList()))
+                .thenReturn(
+                        TaxBreakdownDTO.builder()
+                                .periodBreakdown(
+                                        List.of(
+                                                TaxPeriodBreakdownDTO.builder()
+                                                        .validFrom(LocalDate.of(2026, 1, 1))
+                                                        .validTo(LocalDate.of(2026, 5, 31))
+                                                        .weight(new BigDecimal("1.0"))
+                                                        .sellAmount(new BigDecimal("30000000"))
+                                                        .gainAmount(new BigDecimal("20000000"))
+                                                        .build(),
+                                                TaxPeriodBreakdownDTO.builder()
+                                                        .validFrom(LocalDate.of(2026, 6, 1))
+                                                        .validTo(LocalDate.of(2026, 7, 31))
+                                                        .weight(new BigDecimal("0.8"))
+                                                        .sellAmount(BigDecimal.ZERO)
+                                                        .gainAmount(BigDecimal.ZERO)
+                                                        .build()))
+                                .build());
+
+        CustomerTaxBasisResponseDTO basis = taxCalculationService.getCustomerTaxBasis(7L);
+        TaxCalculationResultDTO expected =
+                taxCalculator.calculate(
+                        List.of(lot(LocalDate.of(2026, 3, 10), "30000000", "100", "1000", "100")),
+                        allSeedRules(),
+                        List.of(externalBuy(LocalDate.of(2026, 6, 15), "10000000")),
+                        false);
+
+        assertThat(basis.getAccountId()).isEqualTo(ACCOUNT_ID);
+        assertThat(basis.getWeightedSell()).isEqualByComparingTo(expected.getWeightedSell());
+        assertThat(basis.getPreAdjustDeduction()).isEqualByComparingTo(expected.getWeightedGain());
+        assertThat(basis.getWeightedNetPurchase())
+                .isEqualByComparingTo(expected.getWeightedExternalAmount());
+        assertThat(basis.getAdjustRatio()).isEqualByComparingTo(expected.getAdjustRatio());
+        assertThat(basis.getFinalDeduction()).isEqualByComparingTo(expected.getFinalDeduction());
+        assertThat(basis.getTotalGain()).isEqualByComparingTo(expected.getOriginalGainAmount());
+        assertThat(basis.getFinalTax()).isEqualByComparingTo(expected.getFinalTax());
+        assertThat(basis.getBasicDeduction()).isEqualByComparingTo("2500000");
+        assertThat(basis.getGeneralTax())
+                .isEqualByComparingTo(
+                        taxCalculator.calculateGeneralTax(
+                                expected.getOriginalGainAmount(), allSeedRules()));
+        assertThat(basis.getReliefAmount())
+                .isEqualByComparingTo(basis.getGeneralTax().subtract(basis.getFinalTax()));
+        assertThat(basis.getWeightedSell().scale()).isEqualTo(2);
+        assertThat(basis.getTotalGain().scale()).isEqualTo(2);
+        assertThat(basis.getBenefit()).isNull();
+        assertThat(basis.isReliefExcluded()).isFalse();
+        assertThat(basis.getBands()).hasSize(2);
+        assertThat(basis.getBands().get(1).getValidFrom()).isEqualTo(LocalDate.of(2026, 6, 1));
+        assertThat(basis.getBands().get(1).getFromMonth()).isEqualTo(6);
+        assertThat(basis.getBands().get(1).getToMonth()).isEqualTo(7);
+        assertThat(basis.getBands().get(1).getWeightRate()).isEqualByComparingTo("0.8");
+        assertThat(basis.getBands().get(0).getSellAmount()).isEqualByComparingTo("30000000");
+        assertThat(basis.getBands().get(0).getGain()).isEqualByComparingTo("20000000");
+        assertThat(basis.getCalculatedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    @DisplayName("세액 계산 근거: RIA 계좌가 없으면 ACCOUNT_NOT_FOUND다")
+    void 계산_근거_계좌없음() {
+        when(accountMapper.selectByCustomerId(7L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> taxCalculationService.getCustomerTaxBasis(7L))
+                .isInstanceOf(AppException.class)
+                .hasMessage(ErrorType.ACCOUNT_NOT_FOUND.getMessage());
+    }
+
+    @Test
+    @DisplayName("세액 계산 근거: 혜택 배제(IMPOSSIBLE) 계좌는 benefit과 reliefExcluded로 알리고 조정비율·최종공제가 0이다")
+    void 계산_근거_혜택배제() {
+        when(accountMapper.selectByCustomerId(7L))
+                .thenReturn(Optional.of(account(BenefitType.IMPOSSIBLE)));
+        stubTaxYearAndClock();
+        when(taxMapper.selectFinalizedLotsByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(
+                        List.of(lot(LocalDate.of(2026, 3, 10), "30000000", "100", "1000", "100")));
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(List.of(ACCOUNT_ID), TAX_YEAR, NOW))
+                .thenReturn(List.of());
+        when(taxBreakdownAssembler.assemble(anyList(), anyList(), anyList()))
+                .thenReturn(TaxBreakdownDTO.builder().periodBreakdown(List.of()).build());
+
+        CustomerTaxBasisResponseDTO basis = taxCalculationService.getCustomerTaxBasis(7L);
+
+        assertThat(basis.getBenefit()).isEqualTo(BenefitType.IMPOSSIBLE);
+        assertThat(basis.isReliefExcluded()).isTrue();
+        assertThat(basis.getFinalDeduction()).isEqualByComparingTo("0");
+        assertThat(basis.getReliefAmount()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    @DisplayName("세액 계산 근거: 세액 연도와 겹치지 않는 다른 연도의 구간 행은 근거에서 뺀다")
+    void 계산_근거_다른연도_구간제외() {
+        when(accountMapper.selectByCustomerId(7L)).thenReturn(Optional.of(account(null)));
+        stubTaxYearAndClock();
+        when(taxMapper.selectFinalizedLotsByAccountIdsAndYear(anyList(), anyInt(), any()))
+                .thenReturn(List.of());
+        when(taxMapper.selectTaxRules()).thenReturn(allSeedRules());
+        when(taxMapper.selectExternalBuysByAccountIdsAndYear(anyList(), anyInt(), any()))
+                .thenReturn(List.of());
+        when(taxBreakdownAssembler.assemble(anyList(), anyList(), anyList()))
+                .thenReturn(
+                        TaxBreakdownDTO.builder()
+                                .periodBreakdown(
+                                        List.of(
+                                                TaxPeriodBreakdownDTO.builder()
+                                                        .validFrom(LocalDate.of(2026, 1, 1))
+                                                        .validTo(LocalDate.of(2026, 5, 31))
+                                                        .weight(BigDecimal.ONE)
+                                                        .sellAmount(BigDecimal.ZERO)
+                                                        .gainAmount(BigDecimal.ZERO)
+                                                        .externalNetBuyAmount(BigDecimal.ZERO)
+                                                        .build(),
+                                                TaxPeriodBreakdownDTO.builder()
+                                                        .validFrom(LocalDate.of(2027, 1, 1))
+                                                        .validTo(LocalDate.of(2027, 5, 31))
+                                                        .weight(BigDecimal.ONE)
+                                                        .sellAmount(BigDecimal.ZERO)
+                                                        .gainAmount(BigDecimal.ZERO)
+                                                        .externalNetBuyAmount(BigDecimal.ZERO)
+                                                        .build()))
+                                .build());
+
+        CustomerTaxBasisResponseDTO basis = taxCalculationService.getCustomerTaxBasis(7L);
+
+        assertThat(basis.getBands()).hasSize(1);
+        assertThat(basis.getBands().get(0).getValidFrom()).isEqualTo(LocalDate.of(2026, 1, 1));
+    }
+}

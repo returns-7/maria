@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.app.maria.domain.foreignproduct.mapper.ForeignProductMapper">
+
+    <select id="selectAll" resultType="ForeignProductDTO">
+        SELECT foreign_product_id, ticker, name, market, currency, type AS foreignProductType
+        FROM foreign_product
+        ORDER BY foreign_product_id
+    </select>
+
+    <select id="selectById" parameterType="Long" resultType="ForeignProductDTO">
+        SELECT foreign_product_id, ticker, name, market, currency, type AS foreignProductType
+        FROM foreign_product
+        WHERE foreign_product_id = #{foreignProductId}
+    </select>
+
+    <select id="selectByIdsOrderedByTickerAndId" resultType="ForeignProductDTO">
+        SELECT foreign_product_id, ticker, name, market, currency, type AS foreignProductType
+        FROM foreign_product
+        WHERE foreign_product_id IN
+        <foreach item="id" collection="ids" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        ORDER BY ticker ASC, foreign_product_id ASC
+    </select>
+
+</mapper>

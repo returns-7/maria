@@ -1,0 +1,133 @@
+package com.app.maria.global.exception;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RestController;
+
+class GlobalExceptionHandlerTest {
+
+    private MockMvc mockMvc;
+
+    @BeforeEach
+    void setUp() {
+        mockMvc =
+                MockMvcBuilders.standaloneSetup(new ExceptionThrowingController())
+                        .setControllerAdvice(new GlobalExceptionHandler())
+                        .build();
+    }
+
+    @Test
+    void earlyWithdrawalConsentRequiredReturnsDistinctErrorCode() throws Exception {
+        mockMvc.perform(get("/test/early-withdrawal-consent"))
+                .andExpect(status().isBadRequest())
+                .andExpect(
+                        jsonPath("$.code")
+                                .value(ErrorType.EARLY_WITHDRAWAL_CONSENT_REQUIRED.name()))
+                .andExpect(
+                        jsonPath("$.message")
+                                .value(ErrorType.EARLY_WITHDRAWAL_CONSENT_REQUIRED.getMessage()));
+    }
+
+    @Test
+    void accountClosureNotAllowedReturnsDistinctErrorCode() throws Exception {
+        mockMvc.perform(get("/test/account-closure-not-allowed"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorType.ACCOUNT_CLOSURE_NOT_ALLOWED.name()))
+                .andExpect(
+                        jsonPath("$.message")
+                                .value(ErrorType.ACCOUNT_CLOSURE_NOT_ALLOWED.getMessage()));
+    }
+
+    @Test
+    void unexpectedExceptionReturns500WithApiResponseDtoFormat() throws Exception {
+        mockMvc.perform(get("/test/unexpected"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.message").value("서버 내부 오류가 발생했습니다."))
+                .andExpect(jsonPath("$.code").doesNotExist());
+    }
+
+    @Test
+    void accessDeniedExceptionIsRethrownNotWrappedAs500() {
+        // AccessDeniedException은 폴백 핸들러가 잡지 않고 re-throw해서
+        // Spring Security 필터 체인의 accessDeniedHandler에 위임해야 한다.
+        // 폴백이 잡아버리면 ApiResponseDTO 500이 나오지만,
+        // re-throw하면 MockMvc가 ServletException으로 감싸서 perform() 자체에서 던진다.
+        assertThatThrownBy(() -> mockMvc.perform(get("/test/access-denied")))
+                .hasCauseInstanceOf(AccessDeniedException.class);
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = ErrorType.class,
+            names = {
+                "ACCOUNT_NOT_FOUND",
+                "ACCOUNT_CUSTOMER_NOT_FOUND",
+                "ACCOUNT_CUSTOMER_IDENTITY_NOT_FOUND",
+                "ACCOUNT_ALREADY_EXISTS",
+                "ACCOUNT_APPLICATION_PERIOD_CLOSED",
+                "ACCOUNT_LIMIT_REQUIRED",
+                "ACCOUNT_LIMIT_BELOW_MINIMUM",
+                "ACCOUNT_LIMIT_ABOVE_MAXIMUM",
+                "ACCOUNT_LIMIT_NOT_WHOLE_WON",
+                "ACCOUNT_NO_LIMIT_AVAILABLE",
+                "ACCOUNT_LIMIT_EXCEEDS_AVAILABLE",
+                "ACCOUNT_LIMIT_BELOW_USED_AMOUNT",
+                "ACCOUNT_LIMIT_UNCHANGED",
+                "ACCOUNT_STATE_NOT_ALLOWED",
+                "ACCOUNT_CONCURRENT_MODIFICATION",
+                "ACCOUNT_APPLICATION_SAVE_FAILED",
+                "ACCOUNT_AMOUNT_UPDATE_FAILED",
+                "ACCOUNT_NUMBER_GENERATION_FAILED",
+                "ACCOUNT_STATUS_LOG_SAVE_FAILED",
+                "ACCOUNT_BENEFIT_LOG_SAVE_FAILED",
+                "ACCOUNT_STATE_UPDATE_FAILED",
+                "ACCOUNT_BENEFIT_UPDATE_FAILED"
+            })
+    void accountErrorsReturnConfiguredStatusCodeAndMessage(ErrorType errorType) throws Exception {
+        mockMvc.perform(get("/test/account-error/{errorType}", errorType.name()))
+                .andExpect(status().is(errorType.getStatus().value()))
+                .andExpect(jsonPath("$.code").value(errorType.name()))
+                .andExpect(jsonPath("$.message").value(errorType.getMessage()));
+    }
+
+    @RestController
+    static class ExceptionThrowingController {
+
+        @GetMapping("/test/early-withdrawal-consent")
+        void requireEarlyWithdrawalConsent() {
+            throw new AppException(ErrorType.EARLY_WITHDRAWAL_CONSENT_REQUIRED);
+        }
+
+        @GetMapping("/test/account-closure-not-allowed")
+        void rejectAccountClosure() {
+            throw new AppException(ErrorType.ACCOUNT_CLOSURE_NOT_ALLOWED);
+        }
+
+        @GetMapping("/test/account-error/{errorType}")
+        void throwAccountError(@PathVariable ErrorType errorType) {
+            throw new AppException(errorType, 1L);
+        }
+
+        @GetMapping("/test/unexpected")
+        void throwUnexpected() {
+            throw new RuntimeException("DB 연결 끊김 같은 예상 밖 오류");
+        }
+
+        @GetMapping("/test/access-denied")
+        void throwAccessDenied() {
+            throw new AccessDeniedException("권한 없음");
+        }
+    }
+}

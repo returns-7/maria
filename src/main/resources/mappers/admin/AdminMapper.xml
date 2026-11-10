@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.app.maria.domain.admin.mapper.AdminMapper">
+    <select id="selectAdminByLoginId" parameterType="String" resultType="AdminUserDTO">
+        SELECT admin_id, login_id, password_hash, role, name
+        FROM admin_user
+        WHERE login_id = #{loginId}
+    </select>
+    <select id="selectAdminByAdminId" parameterType="Long" resultType="AdminUserDTO">
+        SELECT admin_id, login_id, password_hash, role, name
+        FROM admin_user
+        WHERE admin_id = #{adminId}
+    </select>
+    <update id="updateRole">
+        UPDATE admin_user
+        SET role = #{role}
+        WHERE admin_id = #{adminId}
+    </update>
+    <select id="selectAllAdmins" resultType="AdminUserDTO">
+        SELECT admin_id, login_id, password_hash, role, name
+        FROM admin_user
+    </select>
+</mapper>

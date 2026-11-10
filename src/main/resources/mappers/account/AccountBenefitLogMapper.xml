@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.app.maria.domain.account.mapper.AccountBenefitLogMapper">
+    <insert id="insertLog" parameterType="AccountBenefitLogDTO">
+        INSERT INTO account_benefit_log (
+            account_id,
+            prev_status,
+            new_status,
+            changed_at,
+            reason
+        ) VALUES (
+            #{accountId},
+            #{prevStatus},
+            #{newStatus},
+            #{changedAt},
+            #{reason}
+        )
+    </insert>
+
+    <select id="selectByAccountId" resultType="AccountBenefitLogDTO" parameterType="Long">
+        SELECT
+            benefit_id,
+            account_id,
+            prev_status,
+            new_status,
+            changed_at,
+            reason
+        FROM account_benefit_log
+        WHERE account_id = #{accountId}
+        ORDER BY changed_at ASC, benefit_id ASC
+    </select>
+
+    <select id="selectLatestByAccountId" resultType="AccountBenefitLogDTO" parameterType="Long">
+        SELECT
+            benefit_id,
+            account_id,
+            prev_status,
+            new_status,
+            changed_at,
+            reason
+        FROM account_benefit_log
+        WHERE account_id = #{accountId}
+        ORDER BY changed_at DESC, benefit_id DESC
+        LIMIT 1
+    </select>
+</mapper>

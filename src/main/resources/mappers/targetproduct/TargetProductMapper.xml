@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.app.maria.domain.targetproduct.mapper.TargetProductMapper">
+
+    <insert id="insertJudgement" parameterType="TargetProductJudgementDTO" useGeneratedKeys="true" keyProperty="judgementId">
+        INSERT INTO target_product_judgement
+        (mydata_trade_id, ci_hash, stock_type, fund_code, fund_name, ticker, is_target, foreign_stock_ratio, inception_date, judged_at, trade_type, amount, trade_date, net_buy_amount)
+        VALUES
+        (#{mydataTradeId}, #{ciHash}, #{stockType}, #{fundCode}, #{fundName}, #{ticker}, #{isTarget}, #{foreignStockRatio}, #{inceptionDate}, #{judgedAt}, #{tradeType}, #{amount}, #{tradeDate}, #{netBuyAmount})
+    </insert>
+
+    <select id="existsByMydataTradeId" resultType="boolean">
+        SELECT EXISTS (
+        SELECT 1 FROM target_product_judgement WHERE mydata_trade_id = #{mydataTradeId}
+        )
+    </select>
+
+    <select id="selectFailureByMydataTradeId" resultType="TargetProductJudgementFailureDTO">
+        SELECT
+        failure_id AS failureId, mydata_trade_id AS mydataTradeId, ci_hash AS ciHash,
+        trade_date AS tradeDate, failure_count AS failureCount, last_error AS lastError,
+        first_failed_at AS firstFailedAt, last_failed_at AS lastFailedAt
+        FROM target_product_judgement_failure
+        WHERE mydata_trade_id = #{mydataTradeId}
+    </select>
+
+    <insert id="upsertFailure" parameterType="TargetProductJudgementFailureDTO">
+        INSERT INTO target_product_judgement_failure
+        (mydata_trade_id, ci_hash, trade_date, failure_count, last_error, first_failed_at, last_failed_at)
+        VALUES
+        (#{mydataTradeId}, #{ciHash}, #{tradeDate}, 1, #{lastError}, #{firstFailedAt}, #{lastFailedAt})
+        ON DUPLICATE KEY UPDATE
+        failure_count = failure_count + 1,
+        last_error = #{lastError},
+        last_failed_at = #{lastFailedAt}
+    </insert>
+
+    <delete id="deleteFailureByMydataTradeId">
+        DELETE FROM target_product_judgement_failure WHERE mydata_trade_id = #{mydataTradeId}
+    </delete>
+
+    <select id="selectJudgements" parameterType="TargetProductSearchDTO" resultType="TargetProductJudgementListDTO">
+        SELECT
+        j.judgement_id  AS judgementId,
+        c.name          AS customerName,
+        j.stock_type    AS stockType,
+        j.fund_name     AS fundName,
+        j.ticker        AS ticker,
+        j.is_target     AS isTarget,
+        j.foreign_stock_ratio AS foreignStockRatio,
+        j.inception_date AS inceptionDate,
+        j.trade_type    AS tradeType,
+        j.amount        AS amount,
+        j.net_buy_amount AS netBuyAmount,
+        j.trade_date    AS tradeDate,
+        j.judged_at     AS judgedAt
+        FROM target_product_judgement j
+        JOIN customer c ON c.ci_hash = j.ci_hash
+        <where>
+            <if test="customerName != null and customerName != ''">
+                AND c.name LIKE CONCAT('%', #{customerName}, '%')
+            </if>
+            <if test="stockType != null">
+                AND j.stock_type = #{stockType}
+            </if>
+            <if test="isTarget != null">
+                AND j.is_target = #{isTarget}
+            </if>
+            <if test="tradeType != null">
+                AND j.trade_type = #{tradeType}
+            </if>
+            <if test="inheritanceGiftOnly != null and inheritanceGiftOnly">
+                AND j.trade_type IN ('INHERITANCE', 'GIFT')
+            </if>
+            <if test="judgedAtFrom != null">
+                AND j.judged_at &gt;= #{judgedAtFrom}
+            </if>
+            <if test="judgedAtTo != null">
+                AND j.judged_at &lt; #{judgedAtTo}
+            </if>
+        </where>
+        ORDER BY ${orderBy}
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countJudgements" resultType="int">
+        SELECT COUNT(*) FROM target_product_judgement
+    </select>
+
+    <select id="countFilteredJudgements" parameterType="TargetProductSearchDTO" resultType="int">
+        SELECT COUNT(*)
+        FROM target_product_judgement j
+        JOIN customer c ON c.ci_hash = j.ci_hash
+        <where>
+            <if test="customerName != null and customerName != ''">
+                AND c.name LIKE CONCAT('%', #{customerName}, '%')
+            </if>
+            <if test="stockType != null">
+                AND j.stock_type = #{stockType}
+            </if>
+            <if test="isTarget != null">
+                AND j.is_target = #{isTarget}
+            </if>
+            <if test="tradeType != null">
+                AND j.trade_type = #{tradeType}
+            </if>
+            <if test="inheritanceGiftOnly != null and inheritanceGiftOnly">
+                AND j.trade_type IN ('INHERITANCE', 'GIFT')
+            </if>
+            <if test="judgedAtFrom != null">
+                AND j.judged_at &gt;= #{judgedAtFrom}
+            </if>
+            <if test="judgedAtTo != null">
+                AND j.judged_at &lt; #{judgedAtTo}
+            </if>
+        </where>
+    </select>
+
+    <select id="selectSummary" resultType="TargetProductSummaryDTO">
+        SELECT
+        COUNT(*) AS todayJudgementCount,
+        COALESCE(SUM(CASE WHEN is_target = TRUE THEN 1 ELSE 0 END), 0) AS todayTargetCount,
+        COALESCE(SUM(CASE WHEN is_target = TRUE THEN net_buy_amount ELSE 0 END), 0) AS todayTargetNetBuyAmount,
+        COALESCE(SUM(CASE WHEN trade_type IN ('INHERITANCE', 'GIFT') THEN 1 ELSE 0 END), 0) AS todayInheritanceGiftCount
+        FROM target_product_judgement
+        WHERE judged_at &gt;= #{today} AND judged_at &lt; #{tomorrow}
+    </select>
+
+    <select id="selectPermanentFailuresOrdered" resultType="TargetProductJudgementFailureListDTO">
+        SELECT
+        f.failure_id      AS failureId,
+        c.name             AS customerName,
+        f.trade_date       AS tradeDate,
+        f.failure_count    AS failureCount,
+        f.last_error       AS lastError,
+        f.first_failed_at  AS firstFailedAt,
+        f.last_failed_at   AS lastFailedAt
+        FROM target_product_judgement_failure f
+        JOIN customer c ON c.ci_hash = f.ci_hash
+        WHERE f.first_failed_at &lt;= #{cutoff}
+        ORDER BY ${orderBy}
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countPermanentFailures" resultType="int">
+        SELECT COUNT(*)
+        FROM target_product_judgement_failure f
+        WHERE f.first_failed_at &lt;= #{cutoff}
+    </select>
+
+</mapper>

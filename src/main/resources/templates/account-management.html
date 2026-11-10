@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <th:block layout:fragment="pageStyles">
+        <link rel="stylesheet" th:href="@{/css/admin/account-management.css}">
+    </th:block>
+</head>
+<body>
+<div layout:fragment="breadcrumb">계좌 관리</div>
+
+<div layout:fragment="content" class="adm-page account-management">
+    <section class="adm-screen account-list-screen">
+        <div class="adm-screen-head">
+            <h1 class="adm-screen-title"><span class="adm-screen-no">[1101]</span> 계좌 관리</h1>
+            <span class="adm-screen-path">심사 · 계좌 &gt; 계좌 관리</span>
+        </div>
+        <div class="adm-summary" id="accountSummary">
+            <div class="adm-summary-item" title="GET /api/admin/account/requiring-action-count">
+                <span class="adm-summary-label">처리 대기</span>
+                <span class="adm-summary-value" id="accountSummaryPending">-</span>
+                <span class="adm-summary-unit">건</span>
+            </div>
+            <div class="adm-summary-item" title="계좌 목록 중 업무일자 당일에 신청된 계좌">
+                <span class="adm-summary-label">오늘 신규 신청</span>
+                <span class="adm-summary-value" id="accountSummaryTodayNew">-</span>
+                <span class="adm-summary-unit">건</span>
+            </div>
+            <div class="adm-summary-item">
+                <span class="adm-summary-label">개설 완료 계좌</span>
+                <span class="adm-summary-value" id="accountSummaryOpened">-</span>
+                <span class="adm-summary-unit">계좌</span>
+            </div>
+            <div class="adm-summary-item" title="이번 주 월요일부터 업무일자까지 신청된 반려 계좌">
+                <span class="adm-summary-label">이번 주 반려</span>
+                <span class="adm-summary-value" id="accountSummaryRejected">-</span>
+                <span class="adm-summary-unit">건</span>
+            </div>
+        </div>
+        <div class="adm-qbox">
+            <div class="adm-qgrid">
+                <label class="adm-qfield" for="accountFilterStatus">상태
+                    <span class="adm-select-wrap">
+                        <select id="accountFilterStatus" class="adm-input adm-select">
+                            <option value="">전체</option>
+                            <option value="APPLIED">심사 대기</option>
+                            <option value="OPENED">개설 완료</option>
+                            <option value="REJECTED">반려</option>
+                            <option value="CLOSURE_REQUESTED">해지 접수</option>
+                            <option value="CLOSED">해지</option>
+                        </select>
+                    </span>
+                </label>
+                <label class="adm-qfield account-keyword-field" for="accountCustomerNameSearch">검색어
+                    <input id="accountCustomerNameSearch" class="adm-input" type="search"
+                           placeholder="계좌번호, 고객명으로 검색" autocomplete="off">
+                </label>
+            </div>
+            <div class="adm-qbtns">
+                <button type="button" id="accountFilterSearch" class="adm-btn adm-btn-primary adm-btn-md">조회</button>
+                <button type="button" id="accountFilterReset" class="adm-btn adm-btn-md">초기화</button>
+            </div>
+        </div>
+        <!-- 옛 요약 카드가 쓰던 숫자 칸. 화면에는 보이지 않고 JS 가 값만 채운다 (A-16 정리 후보) -->
+        <div class="account-legacy-summary" hidden aria-hidden="true">
+            <span id="totalAccountCount"></span><span id="totalAccountDelta"></span>
+            <span id="appliedAccountCount"></span><span id="appliedAccountDelta"></span>
+            <span id="openedAccountCount"></span><span id="openedAccountDelta"></span>
+            <span id="rejectedAccountCount"></span><span id="rejectedAccountDelta"></span>
+            <span id="closureRequestedAccountCount"></span><span id="closureRequestedAccountDelta"></span>
+            <span id="closedAccountCount"></span><span id="closedAccountDelta"></span>
+        </div>
+    </section>
+
+    </section>
+
+    <input id="accountCustomerIdSearch" type="hidden">
+    <input id="accountNoSearch" type="hidden">
+    <section class="adm-grid account-list-grid">
+        <div class="adm-grid-head">
+            <span class="adm-grid-title">계좌 목록</span>
+            <span class="adm-grid-total">총 <b id="accountListCount">-</b>건</span>
+            <div class="adm-pager" id="accountPagination"></div>
+            <div class="adm-per">페이지당
+                <div class="adm-seg" id="accountPageSize" role="group" aria-label="페이지당 건수">
+                    <button type="button" data-size="20" class="is-on">20</button>
+                    <button type="button" data-size="50">50</button>
+                    <button type="button" data-size="100">100</button>
+                </div>건
+            </div>
+            <!-- 원본에 없는 기존 기능(계좌 개설 신청). 심사담당에게만 보인다 -->
+            <button type="button" id="openAccountCreateModal" class="adm-btn adm-btn-primary account-create-trigger" hidden>계좌 개설 신청</button>
+        </div>
+        <div class="adm-grid-body">
+            <div class="adm-grid-scroll">
+                <table class="adm-gtable account-list-table">
+                    <thead>
+                    <tr>
+                        <th class="adm-col-no">No</th>
+                        <th><button type="button" class="account-sort" data-sort="accountNo">계좌번호</button></th>
+                        <th class="account-col-name"><button type="button" class="account-sort" data-sort="customerName">고객</button></th>
+                        <th class="is-c"><button type="button" class="account-sort" data-sort="status">상태</button></th>
+                        <th class="is-r"><button type="button" class="account-sort" data-sort="limitAmount">한도</button></th>
+                        <th class="is-r"><button type="button" class="account-sort" data-sort="amount">잔고</button></th>
+                        <th class="is-c"><button type="button" class="account-sort" data-sort="benefit">세제 혜택</button></th>
+                        <th><button type="button" class="account-sort" data-sort="createdAt">신청 일시</button></th>
+                        <th><button type="button" class="account-sort" data-sort="openedAt">개설 일시</button></th>
+                    </tr>
+                    </thead>
+                    <tbody id="accountListBody">
+                    <tr class="is-state account-loading-row">
+                        <td colspan="9">불러오는 중...</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- 상세 패널 (520px). 순서 중요: layout.js 의 Esc 처리는 마지막 .is-open 요소의 닫기 버튼을 누른다 -->
+    <div id="accountDetailBackdrop" class="adm-scrim" hidden></div>
+    <aside id="accountDetailModal" class="adm-panel" role="dialog" aria-modal="true"
+           aria-hidden="true" aria-labelledby="detailAccountNo">
+        <div class="adm-panel-head">
+            <div class="adm-panel-title">
+                <span class="adm-panel-no">[1101]</span>
+                <span class="adm-panel-name" id="detailCustomerName">계좌 상세</span>
+                <span class="adm-panel-sub" id="detailAccountNo">-</span>
+            </div>
+            <button type="button" class="adm-panel-close" id="closeAccountDetail" title="닫기" aria-label="닫기">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="adm-panel-body" id="accountDetail">
+            <div>
+                <div class="adm-section-title">기본 정보</div>
+                <div class="adm-kv">
+                    <div class="adm-kv-k">상태</div>
+                    <div class="adm-kv-v"><span id="detailStatus" class="adm-chip">-</span></div>
+                    <div class="adm-kv-k">세제 혜택</div>
+                    <div class="adm-kv-v"><span id="detailBenefit" class="adm-chip">-</span></div>
+                    <div class="adm-kv-k">신청 일시</div>
+                    <div class="adm-kv-v" id="detailCreatedAt">-</div>
+                    <div class="adm-kv-k">개설 일시</div>
+                    <div class="adm-kv-v" id="detailOpenedAt">-</div>
+                    <div class="adm-kv-k">잔고</div>
+                    <div class="adm-kv-v" id="detailAmount">-</div>
+                    <div class="adm-kv-k">한도</div>
+                    <div class="adm-kv-v" id="detailLimitAmount">-</div>
+                    <!-- 원본에 없는 기존 항목 -->
+                    <div class="adm-kv-k">고객 ID</div>
+                    <div class="adm-kv-v" id="detailCustomerId">-</div>
+                </div>
+            </div>
+
+            <div class="account-gauge" aria-label="매도 한도 사용 현황">
+                <div class="account-gauge-head">
+                    <span class="account-gauge-title">한도 사용 <span class="account-gauge-sub">· 5,000만 원 기준</span></span>
+                    <span class="account-gauge-value"><span id="detailUsedAmount">-</span> <span class="account-gauge-sub" id="detailLimitGaugeText"></span></span>
+                </div>
+                <div class="account-gauge-track"><span id="detailLimitGaugeFill"></span></div>
+                <div class="account-gauge-labels">
+                    <span>0</span>
+                    <span id="detailRemainingLimit">-</span>
+                    <span id="detailLimitGaugeTotal">-</span>
+                </div>
+            </div>
+
+            <div>
+                <div class="adm-tabs" role="tablist" aria-label="계좌 상세 내역">
+                    <button class="adm-tab is-on" id="accountTabButtonHoldings" type="button" role="tab" aria-selected="true" aria-controls="accountTabHoldings" data-account-tab="holdings">보유</button>
+                    <button class="adm-tab" id="accountTabButtonInbounds" type="button" role="tab" aria-selected="false" aria-controls="accountTabInbounds" data-account-tab="inbounds">입고</button>
+                    <button class="adm-tab" id="accountTabButtonClosure" type="button" role="tab" aria-selected="false" aria-controls="accountTabClosure" data-account-tab="closure">해지</button>
+                    <button class="adm-tab" id="accountTabButtonWithdrawals" type="button" role="tab" aria-selected="false" aria-controls="accountTabWithdrawals" data-account-tab="withdrawals">인출</button>
+                    <button class="adm-tab" id="accountTabButtonSales" type="button" role="tab" aria-selected="false" aria-controls="accountTabSales" data-account-tab="sales">매도내역</button>
+                    <button class="adm-tab" id="accountTabButtonHistory" type="button" role="tab" aria-selected="false" aria-controls="accountTabHistory" data-account-tab="history">상태 이력</button>
+                    <button class="adm-tab" id="accountTabButtonDocuments" type="button" role="tab" aria-selected="false" aria-controls="accountTabDocuments" data-account-tab="documents">확인서</button>
+                </div>
+                <section id="accountTabHoldings" class="account-tab-panel adm-grid-scroll" role="tabpanel" aria-labelledby="accountTabButtonHoldings">
+                    <table class="adm-gtable account-tab-table account-holdings-table">
+                        <thead><tr><th class="adm-col-no">No</th><th>종목</th><th>시장 · 통화</th><th class="is-r">보유 수량</th></tr></thead>
+                        <tbody id="detailHoldings"></tbody>
+                    </table>
+                </section>
+                <section id="accountTabInbounds" class="account-tab-panel adm-grid-scroll" role="tabpanel" aria-labelledby="accountTabButtonInbounds" hidden>
+                    <table class="adm-gtable account-tab-table account-inbounds-table">
+                        <thead><tr><th class="adm-col-no">No</th><th>종목</th><th>출처 · 매수일</th><th class="is-r">신청 수량</th><th class="is-r">현재 보유</th><th>처리 일시</th></tr></thead>
+                        <tbody id="detailInbounds"></tbody>
+                    </table>
+                </section>
+                <section id="accountTabClosure" class="account-tab-panel" role="tabpanel" aria-labelledby="accountTabButtonClosure" hidden>
+                    <div class="account-tab-heading">
+                        <a class="account-closure-link" href="/admin/account-closures">[1403] 계좌 해지 관리에서 보기</a>
+                    </div>
+                    <div id="detailClosure"></div>
+                    <div id="closureReviewActions" class="closure-review-actions" hidden>
+                        <input id="closureRejectionReason" class="adm-input" type="text" maxlength="200" placeholder="반려 사유를 입력하세요">
+                        <div class="account-closure-buttons">
+                            <button id="rejectClosure" class="adm-btn" type="button">반려</button>
+                            <button id="approveClosure" class="adm-btn adm-btn-primary" type="button">승인</button>
+                        </div>
+                    </div>
+                </section>
+                <section id="accountTabWithdrawals" class="account-tab-panel adm-grid-scroll" role="tabpanel" aria-labelledby="accountTabButtonWithdrawals" hidden>
+                    <table class="adm-gtable account-tab-table account-withdrawals-table">
+                        <thead><tr><th class="adm-col-no">No</th><th class="is-r">인출 금액</th><th class="is-c">처리 상태</th><th>처리 일시</th><th>목적지</th></tr></thead>
+                        <tbody id="detailWithdrawals"></tbody>
+                    </table>
+                </section>
+                <section id="accountTabSales" class="account-tab-panel adm-grid-scroll" role="tabpanel" aria-labelledby="accountTabButtonSales" hidden>
+                    <table class="adm-gtable account-tab-table account-sales-table">
+                        <thead><tr><th class="adm-col-no">No</th><th>주문 번호</th><th class="is-r">매도 수량</th><th class="is-c">처리 상태</th><th class="is-r">기준 가격</th><th>처리 일시</th></tr></thead>
+                        <tbody id="detailSales"></tbody>
+                    </table>
+                </section>
+                <section id="accountTabHistory" class="account-tab-panel adm-grid-scroll" role="tabpanel" aria-labelledby="accountTabButtonHistory" hidden>
+                    <table class="adm-gtable account-tab-table account-history-table">
+                        <thead><tr><th class="adm-col-no">No</th><th>변경 일시</th><th>변경 내용</th><th>사유</th></tr></thead>
+                        <tbody id="accountHistoryList"></tbody>
+                    </table>
+                </section>
+                <section id="accountTabDocuments" class="account-tab-panel" role="tabpanel" aria-labelledby="accountTabButtonDocuments" hidden>
+                    <div class="account-tab-heading account-doc-head">
+                        <span>세제혜택 확인서</span>
+                        <span>
+                            <button class="adm-btn adm-btn-primary issue-document" type="button" data-doc-type="TAX_RELIEF_CERT" hidden>증빙서 발급</button>
+                            <button class="adm-btn adm-btn-primary issue-document" type="button" data-doc-type="NET_PURCHASE_STATEMENT" hidden>순매수 내역서 발급</button>
+                        </span>
+                    </div>
+                    <div class="adm-grid-scroll">
+                        <table class="adm-gtable account-tab-table account-documents-table">
+                            <thead><tr><th class="adm-col-no">No</th><th>종류</th><th>발급 번호</th><th class="is-c">상태</th><th>발급 주체</th><th>발급 일시</th><th class="is-c">다운로드</th></tr></thead>
+                            <tbody id="detailDocuments"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+            <!-- 원본에 없는 기존 요소: 선택 계좌 관련 화면으로 이동 -->
+            <nav class="account-detail-navigation" aria-label="선택 계좌 관련 메뉴">
+                <button class="adm-btn account-detail-link-btn" type="button" data-target="/admin/sell-orders">매도내역</button>
+                <button class="adm-btn account-detail-link-btn" type="button" data-target="/admin/tax">세액계산</button>
+                <button class="adm-btn account-detail-link-btn" type="button" data-target="/admin/inbound">입고내역</button>
+                <button class="adm-btn account-detail-link-btn" type="button" data-target="/admin/withdrawals">인출내역</button>
+            </nav>
+        </div>
+        <div class="adm-panel-foot account-detail-foot">
+            <div id="accountReviewControls" class="account-review-controls" hidden>
+                <button id="approveAccount" class="adm-btn adm-btn-primary" type="button">승인</button>
+                <button id="rejectAccount" class="adm-btn adm-btn-warn" type="button">반려</button>
+                <button id="openLimitModal" class="adm-btn" type="button">한도 변경</button>
+                <button id="openReapplyModal" class="adm-btn" type="button">재신청</button>
+                <button id="overrideAccount" class="adm-btn" type="button">오버라이드 승인</button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 계좌 개설 신청 (원본에 없는 기존 기능 — 모양만 원본 모달로) -->
+    <div id="accountCreateModal" class="adm-modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="accountCreateModalTitle">
+        <section id="accountCreateSection" class="adm-modal">
+            <div class="adm-modal-head">
+                <h2 id="accountCreateModalTitle">계좌 개설 신청</h2>
+                <button id="closeAccountCreateModal" class="adm-modal-close" type="button" aria-label="닫기">&times;</button>
+            </div>
+            <form id="accountCreateForm" novalidate>
+                <div class="adm-modal-body">
+                    <p class="adm-modal-desc">고객 이름을 검색해 대상 고객을 선택합니다.</p>
+                    <div class="adm-modal-form">
+                        <label class="adm-modal-k" for="createCustomerName">고객 이름</label>
+                        <div class="adm-modal-v customer-search-field">
+                            <input id="createCustomerName" type="search" maxlength="50" autocomplete="off" placeholder="이름 입력" required
+                                   role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="customerSearchResults">
+                            <input id="createCustomerId" type="hidden" required>
+                            <div id="customerSearchResults" class="customer-search-results" role="listbox" hidden></div>
+                        </div>
+                        <label class="adm-modal-k" for="createLimitAmount">설정 한도</label>
+                        <div class="adm-modal-v has-unit">
+                            <input id="createLimitAmount" class="account-currency-input" type="text" inputmode="numeric" autocomplete="off" required>
+                            <span class="adm-modal-unit">원</span>
+                        </div>
+                        <div class="adm-modal-k">선택한 고객</div>
+                        <div class="adm-modal-v"><span id="selectedCustomer" class="selected-customer" hidden></span></div>
+                        <div class="adm-modal-k">사용 가능한 한도</div>
+                        <div class="adm-modal-v"><span id="availableLimit" class="available-limit">고객을 선택하세요.</span></div>
+                    </div>
+                </div>
+                <div class="adm-modal-actions">
+                    <button id="cancelAccountCreateModal" class="adm-btn" type="button">취소</button>
+                    <button class="adm-btn adm-btn-primary" type="submit">계좌 신청</button>
+                </div>
+            </form>
+        </section>
+    </div>
+
+    <!-- 한도 변경 -->
+    <div id="accountLimitModal" class="adm-modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="accountLimitModalTitle">
+        <section class="adm-modal is-confirm">
+            <div class="adm-modal-head"><h2 id="accountLimitModalTitle">한도를 변경할까요?</h2></div>
+            <form id="accountLimitModalForm" novalidate>
+                <div class="adm-modal-body">
+                    <p class="adm-modal-desc" id="accountLimitModalDesc">-</p>
+                    <div class="adm-modal-form">
+                        <div class="adm-modal-k">현재 설정 한도</div>
+                        <div class="adm-modal-v" id="modalCurrentLimit">-</div>
+                        <div class="adm-modal-k">매도한도 사용액</div>
+                        <div class="adm-modal-v" id="modalUsedAmount">-</div>
+                        <div class="adm-modal-k">매도 가능 잔여한도</div>
+                        <div class="adm-modal-v" id="modalRemainingLimit">-</div>
+                        <div class="adm-modal-k">설정 가능한 최대한도</div>
+                        <div class="adm-modal-v" id="modalAvailableLimit">조회 중...</div>
+                        <label class="adm-modal-k" for="modalNewLimitAmount">변경할 한도</label>
+                        <div class="adm-modal-v has-unit">
+                            <input id="modalNewLimitAmount" class="account-currency-input" type="text" inputmode="numeric" autocomplete="off" required>
+                            <span class="adm-modal-unit">원</span>
+                        </div>
+                    </div>
+                    <p class="adm-modal-help">전 증권사 합산 50,000,000원을 넘을 수 없습니다.</p>
+                </div>
+                <div class="adm-modal-actions">
+                    <button id="cancelLimitModal" class="adm-btn" type="button">취소</button>
+                    <button class="adm-btn adm-btn-primary" type="submit">한도 변경</button>
+                </div>
+            </form>
+        </section>
+    </div>
+
+    <!-- 재신청 -->
+    <div id="accountReapplyModal" class="adm-modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="accountReapplyModalTitle">
+        <section class="adm-modal is-confirm">
+            <div class="adm-modal-head"><h2 id="accountReapplyModalTitle">재신청 상태로 돌릴까요?</h2></div>
+            <form id="accountReapplyModalForm" novalidate>
+                <div class="adm-modal-body">
+                    <p class="adm-modal-desc" id="accountReapplyModalDesc">반려된 계좌의 한도를 확인한 뒤 재신청합니다.</p>
+                    <div class="adm-modal-form">
+                        <div class="adm-modal-k">기존 설정 한도</div>
+                        <div class="adm-modal-v" id="reapplyCurrentLimit">-</div>
+                        <div class="adm-modal-k">설정 가능한 최대한도</div>
+                        <div class="adm-modal-v" id="reapplyAvailableLimit">조회 중...</div>
+                        <label class="adm-modal-k" for="modalReapplyLimitAmount">재신청 한도</label>
+                        <div class="adm-modal-v has-unit">
+                            <input id="modalReapplyLimitAmount" class="account-currency-input" type="text" inputmode="numeric" autocomplete="off" required>
+                            <span class="adm-modal-unit">원</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="adm-modal-actions">
+                    <button id="cancelReapplyModal" class="adm-btn" type="button">취소</button>
+                    <button class="adm-btn adm-btn-primary" type="submit">재신청</button>
+                </div>
+            </form>
+        </section>
+    </div>
+
+    <!-- 승인 · 반려 · 오버라이드 확인 -->
+    <div id="accountActionModal" class="adm-modal-backdrop" hidden>
+        <section class="adm-modal is-confirm" role="dialog" aria-modal="true" aria-labelledby="accountActionModalTitle">
+            <div class="adm-modal-head"><h2 id="accountActionModalTitle">계좌 처리 확인</h2></div>
+            <div class="adm-modal-body">
+                <p class="adm-modal-desc" id="accountActionDescription"></p>
+                <div id="rejectionActions" class="account-action-modal-field" hidden>
+                    <label for="accountReason">반려 사유</label>
+                    <input id="accountReason" class="adm-input account-reason-input" type="text"
+                           placeholder="반려 사유를 입력하세요" maxlength="200">
+                </div>
+                <div id="overrideActions" class="account-action-modal-field" hidden>
+                    <label for="overrideReason">오버라이드 사유</label>
+                    <input id="overrideReason" class="adm-input" type="text" maxlength="200" placeholder="승인 전환 사유를 입력하세요">
+                </div>
+            </div>
+            <div class="adm-modal-actions">
+                <button id="accountActionCancelButton" class="adm-btn" type="button" aria-label="취소하고 닫기">취소</button>
+                <button id="accountActionConfirmButton" class="adm-btn adm-btn-primary" type="button">확인</button>
+            </div>
+        </section>
+    </div>
+</div>
+
+<th:block layout:fragment="pageScripts">
+    <script th:src="@{/js/admin/status-labels.js}"></script>
+    <script th:src="@{/js/account-management.js}"></script>
+</th:block>
+</body>
+</html>

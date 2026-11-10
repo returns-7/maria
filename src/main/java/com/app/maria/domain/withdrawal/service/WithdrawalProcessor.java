@@ -1,0 +1,315 @@
+package com.app.maria.domain.withdrawal.service;
+
+import com.app.maria.domain.account.dto.AccountBenefitLogDTO;
+import com.app.maria.domain.account.dto.AccountDTO;
+import com.app.maria.domain.account.mapper.AccountBenefitLogMapper;
+import com.app.maria.domain.account.mapper.AccountMapper;
+import com.app.maria.domain.account.type.BenefitType;
+import com.app.maria.domain.account.type.Status;
+import com.app.maria.domain.document.mapper.DocumentIssueMapper;
+import com.app.maria.domain.withdrawal.dto.LeftAmountDTO;
+import com.app.maria.domain.withdrawal.dto.WithdrawalAllocationDTO;
+import com.app.maria.domain.withdrawal.dto.WithdrawalDTO;
+import com.app.maria.domain.withdrawal.dto.WithdrawalResultDTO;
+import com.app.maria.domain.withdrawal.dto.request.WithdrawalRequestDTO;
+import com.app.maria.domain.withdrawal.mapper.WithdrawalMapper;
+import com.app.maria.domain.withdrawal.type.WithdrawalStatus;
+import com.app.maria.domain.withdrawal.type.WithdrawalType;
+import com.app.maria.global.client.generalaccount.dto.response.GeneralAccountResponseDTO;
+import com.app.maria.global.clock.service.BusinessClockService;
+import com.app.maria.global.exception.AppException;
+import com.app.maria.global.exception.ErrorType;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+public class WithdrawalProcessor {
+
+    private final BusinessClockService businessClockService;
+    private final AccountMapper accountMapper;
+    private final WithdrawalMapper withdrawalMapper;
+    private final AccountBenefitLogMapper accountBenefitLogMapper;
+    private final DocumentIssueMapper documentIssueMapper;
+    private final ClosureWithdrawalContextHolder closureWithdrawalContextHolder;
+
+    @Transactional
+    public WithdrawalResultDTO withdraw(
+            WithdrawalRequestDTO requestDTO, GeneralAccountResponseDTO destinationGeneralAccount) {
+        return processWithdrawal(requestDTO, destinationGeneralAccount, Status.OPENED);
+    }
+
+    private WithdrawalResultDTO processWithdrawal(
+            WithdrawalRequestDTO requestDTO,
+            GeneralAccountResponseDTO destinationGeneralAccount,
+            Status allowedStatus) {
+        Long accountId = requestDTO.getAccountId();
+        BigDecimal requestedAmount = requestDTO.getRequestedAmount();
+
+        if (requestedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new AppException(ErrorType.INVALID_WITHDRAWAL_AMOUNT, requestedAmount);
+        }
+
+        AccountDTO account =
+                accountMapper
+                        .selectByAccountIdForUpdate(accountId)
+                        .orElseThrow(
+                                () -> new AppException(ErrorType.ACCOUNT_NOT_FOUND, accountId));
+
+        if (account.getStatus() != allowedStatus) {
+            throw new AppException(ErrorType.ACCOUNT_STATUS_NOT_WITHDRAWABLE, accountId);
+        }
+
+        // 잠금 획득 후 상태 검사를 통과한 시점에만 컨텍스트를 기록한다.
+        // 상태 불일치(반려·이미 처리됨)는 인출 시도 전이므로 FAILED 행을 남기지 않는다.
+        if (allowedStatus == Status.CLOSURE_REQUESTED) {
+            closureWithdrawalContextHolder.set(
+                    accountId,
+                    requestedAmount,
+                    destinationGeneralAccount.getAccountNo(),
+                    destinationGeneralAccount.getGeneralAccountId());
+        }
+
+        LocalDateTime currentDatetime = businessClockService.now();
+
+        if (account.getAmount().compareTo(requestedAmount) < 0) {
+            throw new AppException(ErrorType.INSUFFICIENT_WITHDRAWAL_AMOUNT, accountId);
+        }
+
+        List<LeftAmountDTO> leftAmounts =
+                withdrawalMapper.selectAvailableLeftAmountsByAccountId(accountId);
+
+        // 확정된 납입 원금의 잔액 합계와 자유롭게 인출할 수 있는 수익금을 계산한다.
+        // account.amount에는 가환전(PROVISIONAL) 금액도 포함되어 있으나 left_amount에는 잡히지 않으므로
+        // PROVISIONAL 합계를 별도로 차감해야 한다.
+        BigDecimal totalPrincipal =
+                leftAmounts.stream()
+                        .map(LeftAmountDTO::getCurAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal provisionalTotal =
+                withdrawalMapper.selectProvisionalAmountByAccountId(accountId);
+
+        // 가환전 중인 금액은 배분 대상(수익금·원금)에서 제외한다.
+        // 전체 잔액 - 가환전액이 요청액보다 적으면 확정 전까지 인출 불가.
+        BigDecimal withdrawableAmount = account.getAmount().subtract(provisionalTotal);
+        if (withdrawableAmount.compareTo(requestedAmount) < 0) {
+            throw new AppException(ErrorType.WITHDRAWAL_BLOCKED_BY_PROVISIONAL, accountId);
+        }
+
+        BigDecimal earnings =
+                account.getAmount()
+                        .subtract(totalPrincipal)
+                        .subtract(provisionalTotal)
+                        .max(BigDecimal.ZERO);
+        BigDecimal earningsAllocation = requestedAmount.min(earnings);
+        BigDecimal remainingRequest = requestedAmount.subtract(earningsAllocation);
+
+        // finalAt으로부터 1년이 지난 납입 원금만 경과 원금으로 분류한다.
+        List<LeftAmountDTO> maturedLeftAmounts =
+                leftAmounts.stream()
+                        .filter(
+                                leftAmount ->
+                                        !leftAmount
+                                                .getFinalAt()
+                                                .plusYears(1)
+                                                .isAfter(currentDatetime))
+                        .toList();
+
+        List<WithdrawalAllocationDTO> allocations = new ArrayList<>();
+
+        // 요청액 중 수익금으로 충당할 수 있는 금액을 가장 먼저 배분한다.
+        if (earningsAllocation.compareTo(BigDecimal.ZERO) > 0) {
+            allocations.add(
+                    WithdrawalAllocationDTO.builder()
+                            .leftAmountId(null)
+                            .allocatedAmount(earningsAllocation)
+                            .withdrawalAt(currentDatetime)
+                            .type(WithdrawalType.EARNINGS_ONLY)
+                            .build());
+        }
+
+        // 수익금 배분 후 남은 요청액을 오래된 경과 원금부터 FIFO로 배분한다.
+        List<WithdrawalAllocationDTO> maturedAllocations =
+                allocateMaturedPrincipalFifo(remainingRequest, maturedLeftAmounts, currentDatetime);
+        allocations.addAll(maturedAllocations);
+
+        // finalAt으로부터 아직 1년이 지나지 않은 납입 원금을 분류한다.
+        List<LeftAmountDTO> immatureLeftAmounts =
+                leftAmounts.stream()
+                        .filter(
+                                leftAmount ->
+                                        leftAmount
+                                                .getFinalAt()
+                                                .plusYears(1)
+                                                .isAfter(currentDatetime))
+                        .toList();
+
+        // 경과 원금에서 실제 배분된 합계를 빼서 조기인출이 필요한 금액을 구한다.
+        BigDecimal maturedAllocatedAmount =
+                maturedAllocations.stream()
+                        .map(WithdrawalAllocationDTO::getAllocatedAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        remainingRequest = remainingRequest.subtract(maturedAllocatedAmount);
+
+        if (remainingRequest.compareTo(BigDecimal.ZERO) > 0) {
+            if (!requestDTO.isEarlyWithdrawalAgreed()) {
+                throw new AppException(ErrorType.EARLY_WITHDRAWAL_CONSENT_REQUIRED, accountId);
+            }
+            List<WithdrawalAllocationDTO> immatureAllocations =
+                    allocateImmaturePrincipalFifo(
+                            remainingRequest, immatureLeftAmounts, currentDatetime);
+
+            BigDecimal immatureAllocatedAmount =
+                    immatureAllocations.stream()
+                            .map(WithdrawalAllocationDTO::getAllocatedAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            if (immatureAllocatedAmount.compareTo(remainingRequest) < 0) {
+                throw new AppException(ErrorType.WITHDRAWAL_SOURCE_AMOUNT_INCONSISTENT, accountId);
+            }
+            allocations.addAll(immatureAllocations);
+            int changedBenefit = accountMapper.updateBenefitToImpossible(accountId);
+            String benefitChangeReason = "조기인출로 인한 세제혜택 취소";
+            if (changedBenefit == 1) {
+                AccountBenefitLogDTO benefitLog =
+                        AccountBenefitLogDTO.builder()
+                                .accountId(accountId)
+                                .prevStatus(account.getBenefit())
+                                .newStatus(BenefitType.IMPOSSIBLE)
+                                .changedAt(currentDatetime)
+                                .reason(benefitChangeReason)
+                                .build();
+
+                int insertedLog = accountBenefitLogMapper.insertLog(benefitLog);
+
+                if (insertedLog != 1) {
+                    throw new AppException(
+                            ErrorType.ACCOUNT_BENEFIT_LOG_SAVE_FAILED, account.getAccountId());
+                }
+                // 혜택이 취소되는 순간 이미 발급한 증빙서류도 무효로 한다(추징 계산 저장을 기다리지 않는다).
+                documentIssueMapper.revokeIssuedByAccountId(accountId, currentDatetime);
+            }
+        }
+        // 인출 저장
+        WithdrawalDTO withdrawal =
+                WithdrawalDTO.builder()
+                        .accountId(accountId)
+                        .requestedAmount(requestedAmount)
+                        .processedAt(currentDatetime)
+                        .destinationAccountNo(destinationGeneralAccount.getAccountNo())
+                        .destinationGeneralAccountId(
+                                destinationGeneralAccount.getGeneralAccountId())
+                        .status(WithdrawalStatus.REQUESTED)
+                        .build();
+        int insertedRows = withdrawalMapper.insertWithdrawal(withdrawal);
+        if (insertedRows != 1) {
+            throw new AppException(ErrorType.WITHDRAWAL_PROCESSING_FAILED, accountId);
+        }
+        // 배분내역 저장
+        for (WithdrawalAllocationDTO allocation : allocations) {
+            allocation.setWithdrawalId(withdrawal.getWithdrawalId());
+            int insertedAllocationRows = withdrawalMapper.insertWithdrawalAllocation(allocation);
+            if (insertedAllocationRows != 1) {
+                throw new AppException(
+                        ErrorType.WITHDRAWAL_PROCESSING_FAILED, withdrawal.getWithdrawalId());
+            }
+            // 원금 차감
+            if (allocation.getLeftAmountId() != null) {
+                int deductedLeftAmountRows =
+                        withdrawalMapper.deductLeftAmount(
+                                allocation.getLeftAmountId(), allocation.getAllocatedAmount());
+                if (deductedLeftAmountRows != 1) {
+                    throw new AppException(
+                            ErrorType.WITHDRAWAL_PROCESSING_FAILED, allocation.getLeftAmountId());
+                }
+            }
+        }
+        // RIA계좌의 총 잔액 차감
+        int deductedAccountRows = withdrawalMapper.deductAccountAmount(accountId, requestedAmount);
+        if (deductedAccountRows != 1) {
+            throw new AppException(ErrorType.WITHDRAWAL_PROCESSING_FAILED, accountId);
+        }
+
+        // 인출 상태 변경
+        int updatedStatusRows =
+                withdrawalMapper.updateWithdrawalStatus(
+                        withdrawal.getWithdrawalId(), WithdrawalStatus.COMPLETED);
+        if (updatedStatusRows != 1) {
+            throw new AppException(
+                    ErrorType.WITHDRAWAL_PROCESSING_FAILED, withdrawal.getWithdrawalId());
+        }
+
+        return WithdrawalResultDTO.builder()
+                .withdrawalId(withdrawal.getWithdrawalId())
+                .allocations(allocations)
+                .build();
+    }
+
+    @Transactional
+    public WithdrawalResultDTO withdrawForClosure(
+            WithdrawalRequestDTO requestDTO, GeneralAccountResponseDTO destinationGeneralAccount) {
+        return processWithdrawal(requestDTO, destinationGeneralAccount, Status.CLOSURE_REQUESTED);
+    }
+
+    private List<WithdrawalAllocationDTO> allocateMaturedPrincipalFifo(
+            BigDecimal amountToAllocate,
+            List<LeftAmountDTO> maturedLeftAmounts,
+            LocalDateTime currentDatetime) {
+        List<WithdrawalAllocationDTO> allocations = new ArrayList<>();
+        BigDecimal remainingAmount = amountToAllocate;
+
+        for (LeftAmountDTO leftAmount : maturedLeftAmounts) {
+            if (remainingAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                break;
+            }
+
+            BigDecimal allocatedAmount = remainingAmount.min(leftAmount.getCurAmount());
+
+            allocations.add(
+                    WithdrawalAllocationDTO.builder()
+                            .leftAmountId(leftAmount.getLeftAmountId())
+                            .allocatedAmount(allocatedAmount)
+                            .withdrawalAt(currentDatetime)
+                            .type(WithdrawalType.MATURED_PRINCIPAL_INCLUDED)
+                            .build());
+
+            remainingAmount = remainingAmount.subtract(allocatedAmount);
+        }
+
+        return allocations;
+    }
+
+    private List<WithdrawalAllocationDTO> allocateImmaturePrincipalFifo(
+            BigDecimal amountToAllocate,
+            List<LeftAmountDTO> immatureLeftAmounts,
+            LocalDateTime currentDatetime) {
+        List<WithdrawalAllocationDTO> allocations = new ArrayList<>();
+        BigDecimal remainingAmount = amountToAllocate;
+
+        for (LeftAmountDTO leftAmount : immatureLeftAmounts) {
+            if (remainingAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                break;
+            }
+
+            BigDecimal allocatedAmount = remainingAmount.min(leftAmount.getCurAmount());
+
+            allocations.add(
+                    WithdrawalAllocationDTO.builder()
+                            .leftAmountId(leftAmount.getLeftAmountId())
+                            .allocatedAmount(allocatedAmount)
+                            .withdrawalAt(currentDatetime)
+                            .type(WithdrawalType.IMMATURE_PRINCIPAL_INCLUDED)
+                            .build());
+
+            remainingAmount = remainingAmount.subtract(allocatedAmount);
+        }
+
+        return allocations;
+    }
+}

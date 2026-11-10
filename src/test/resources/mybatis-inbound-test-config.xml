@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE configuration
+        PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-config.dtd">
+
+<configuration>
+    <settings>
+        <setting name="mapUnderscoreToCamelCase" value="true"/>
+    </settings>
+
+    <typeAliases>
+        <typeAlias alias="InboundDTO" type="com.app.maria.domain.inbound.dto.InboundDTO"/>
+        <typeAlias alias="InboundDetailDTO" type="com.app.maria.domain.inbound.dto.InboundDetailDTO"/>
+        <typeAlias alias="InboundMinDTO" type="com.app.maria.domain.inbound.dto.InboundMinDTO"/>
+        <typeAlias alias="InboundHoldingDTO" type="com.app.maria.domain.inbound.dto.InboundHoldingDTO"/>
+        <typeAlias alias="InboundListDTO" type="com.app.maria.domain.inbound.dto.InboundListDTO"/>
+        <typeAlias alias="SourceLotApprovedQtyDTO" type="com.app.maria.domain.inbound.dto.SourceLotApprovedQtyDTO"/>
+        <typeAlias alias="InboundLotDTO" type="com.app.maria.domain.inbound.dto.InboundLotDTO"/>
+        <typeAlias alias="InboundSummaryDTO" type="com.app.maria.domain.inbound.dto.InboundSummaryDTO"/>
+        <typeAlias alias="InboundAccountSummaryDTO" type="com.app.maria.domain.inbound.dto.InboundAccountSummaryDTO"/>
+        <typeAlias alias="InboundPriorApprovalDTO" type="com.app.maria.domain.inbound.dto.InboundPriorApprovalDTO"/>
+    </typeAliases>
+
+    <environments default="inbound-mapper-test">
+        <environment id="inbound-mapper-test">
+            <transactionManager type="JDBC"/>
+            <dataSource type="POOLED">
+                <property name="driver" value="org.h2.Driver"/>
+                <property name="url" value="jdbc:h2:mem:inbound_mapper_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE"/>
+                <property name="username" value="sa"/>
+                <property name="password" value=""/>
+            </dataSource>
+        </environment>
+    </environments>
+
+    <mappers>
+        <mapper resource="mappers/inbound/InboundMapper.xml"/>
+    </mappers>
+</configuration>

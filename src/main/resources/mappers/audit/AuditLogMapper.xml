@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.app.maria.global.audit.mapper.AuditLogMapper">
+
+    <insert id="insertLog">
+    <bind name="resolvedActorId" value="actorId != null ? actorId : adminId"/>
+    INSERT INTO audit_log(
+        admin_id, actor_type, actor_id, target_table, target_pk, before_value, after_value, reason_code, processed_at
+    )
+    VALUES(
+        #{adminId}, COALESCE(#{actorType}, 'ADMIN'), #{resolvedActorId,jdbcType=BIGINT},
+        #{targetTable}, #{targetPk}, #{beforeValue}, #{afterValue}, #{reasonCode},
+        COALESCE(#{processedAt}, CURRENT_TIMESTAMP)
+    )
+    </insert>
+
+    <sql id="auditLogSearchCondition">
+        <where>
+            <if test="targetTable != null and targetTable != ''">
+                AND al.target_table = #{targetTable}
+            </if>
+            <if test="adminKeyword != null and adminKeyword != ''">
+                AND (
+                au.name LIKE CONCAT('%', #{adminKeyword}, '%')
+                OR au.role LIKE CONCAT('%', #{adminKeyword}, '%')
+                <if test="matchedRoles != null and !matchedRoles.isEmpty()">
+                    OR au.role IN
+                    <foreach item="r" collection="matchedRoles" open="(" separator="," close=")">#{r}</foreach>
+                </if>
+                )
+            </if>
+            <if test="targetKeyword != null and targetKeyword != ''">
+                AND (
+                target_admin.name LIKE CONCAT('%', #{targetKeyword}, '%')
+                OR target_account.account_no LIKE CONCAT('%', #{targetKeyword}, '%')
+                OR al.target_pk LIKE CONCAT('%', #{targetKeyword}, '%')
+                )
+            </if>
+            <if test="reasonKeyword != null and reasonKeyword != ''">
+                AND (
+                (
+                al.reason_code LIKE CONCAT('%', #{reasonKeyword}, '%')
+                <if test="knownReasonCodes != null and !knownReasonCodes.isEmpty()">
+                    AND al.reason_code NOT IN
+                    <foreach item="r" collection="knownReasonCodes" open="(" separator="," close=")">#{r}</foreach>
+                </if>
+                )
+                <if test="matchedReasonCodes != null and !matchedReasonCodes.isEmpty()">
+                    OR al.reason_code IN
+                    <foreach item="r" collection="matchedReasonCodes" open="(" separator="," close=")">#{r}</foreach>
+                </if>
+                )
+            </if>
+            <if test="startDate != null">AND al.processed_at &gt;= #{startDate}</if>
+            <if test="endDate != null">AND al.processed_at &lt;= #{endDate}</if>
+        </where>
+    </sql>
+
+    <select id="selectAuditLogs" parameterType="com.app.maria.global.audit.dto.AuditLogSearchDTO"
+            resultType="com.app.maria.global.audit.dto.AuditLogDTO">
+        SELECT al.audit_id, al.admin_id, al.actor_type, al.actor_id, al.target_table, al.target_pk, al.before_value, al.after_value, al.reason_code, al.processed_at, al.recorded_at, au.name AS admin_name, au.role AS admin_role,
+            target_admin.name AS target_admin_name, target_account.account_no AS target_owner_account_no, target_batch.executed_at AS target_batch_executed_at
+        FROM audit_log al
+        LEFT JOIN admin_user au ON au.admin_id = al.admin_id
+        LEFT JOIN admin_user target_admin
+            ON al.target_table = 'ADMIN_USER' AND CAST(target_admin.admin_id AS CHAR(20)) = al.target_pk
+        LEFT JOIN account target_account
+            ON al.target_table = 'ACCOUNT' AND CAST(target_account.account_id AS CHAR(20)) = al.target_pk
+        LEFT JOIN settlement_batch target_batch
+            ON al.target_table = 'SETTLEMENT_BATCH' AND CAST(target_batch.batch_id AS CHAR(20)) = al.target_pk
+        <include refid="auditLogSearchCondition"/>
+        ORDER BY ${orderBy}
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countAuditLogs" parameterType="com.app.maria.global.audit.dto.AuditLogSearchDTO" resultType="long">
+        SELECT COUNT(*)
+        FROM audit_log al
+        LEFT JOIN admin_user au ON au.admin_id = al.admin_id
+        LEFT JOIN admin_user target_admin
+            ON al.target_table = 'ADMIN_USER' AND CAST(target_admin.admin_id AS CHAR(20)) = al.target_pk
+        LEFT JOIN account target_account
+            ON al.target_table = 'ACCOUNT' AND CAST(target_account.account_id AS CHAR(20)) = al.target_pk
+        LEFT JOIN settlement_batch target_batch
+            ON al.target_table = 'SETTLEMENT_BATCH' AND CAST(target_batch.batch_id AS CHAR(20)) = al.target_pk
+        <include refid="auditLogSearchCondition"/>
+    </select>
+
+</mapper>

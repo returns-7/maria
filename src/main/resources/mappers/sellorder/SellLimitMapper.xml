@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.app.maria.domain.sellorder.mapper.SellLimitMapper">
+
+    <select id="selectAccountLimitForUpdate" parameterType="Long" resultType="BigDecimal">
+        SELECT limit_amount
+        FROM account
+        WHERE account_id = #{accountId}
+        FOR UPDATE
+    </select>
+    
+    <sql id="usedAmountCase">
+        CASE
+            WHEN ke.settlement_status = 'FINALIZED' THEN ke.final_amount
+            WHEN ke.exchange_id IS NOT NULL THEN ke.provisional_amount
+            ELSE so.sell_qty * so.base_price
+        END
+    </sql>
+
+    <select id="sumUsedAmount" parameterType="Long" resultType="BigDecimal">
+        SELECT COALESCE(SUM(
+        <include refid="usedAmountCase"/>
+        ), 0)
+        FROM sell_order so
+        LEFT JOIN krw_exchange ke ON ke.order_id = so.order_id
+        WHERE so.account_id = #{accountId}
+        AND so.status != 'REJECTED'
+    </select>
+
+    <select id="selectCiHashByAccountId" parameterType="Long" resultType="String">
+        SELECT c.ci_hash
+        FROM customer c
+        JOIN account a ON a.customer_id = c.customer_id
+        WHERE a.account_id = #{accountId}
+    </select>
+
+    <select id="selectAccountByInboundId" parameterType="Long" resultType="Long">
+        SELECT account_id
+        FROM inbound
+        WHERE inbound_id = #{inboundId}
+    </select>
+
+</mapper>

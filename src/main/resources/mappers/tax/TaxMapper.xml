@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.app.maria.domain.tax.mapper.TaxMapper">
+
+    <select id="selectFinalizedLotsByAccountIdsAndYear" resultType="SellLotDTO">
+        select
+            ke.account_id,
+            so.order_id,
+            so.inbound_detail_id,
+            ke.final_amount,
+            ke.final_at,
+            so.sell_qty,
+            id.purchase_fx_rate,
+            id.purchase_price,
+            concat(fp.ticker, ' ', fp.name) as product_label
+        from krw_exchange ke
+        join sell_order so on so.order_id = ke.order_id
+        join inbound_detail id on id.inbound_detail_id = so.inbound_detail_id
+        join foreign_product fp on fp.foreign_product_id = id.foreign_product_id
+        where ke.account_id in
+        <foreach collection="accountIds" item="accountId" open="(" close=")" separator=",">
+            #{accountId}
+        </foreach>
+            and ke.settlement_status = 'FINALIZED'
+            and so.status = 'EXECUTED'
+            and YEAR(ke.final_at) = #{year}
+            and #{calcBaseTime} >= ke.final_at
+    </select>
+
+    <select id="selectProvisionalLotsByAccountIdsAndYear" resultType="SellLotDTO">
+        select
+            ke.account_id,
+            so.order_id,
+            so.inbound_detail_id,
+            ke.provisional_amount as final_amount,
+            ke.final_at,
+            so.sell_qty,
+            id.purchase_fx_rate,
+            id.purchase_price,
+            concat(fp.ticker, ' ', fp.name) as product_label
+        from krw_exchange ke
+        join sell_order so on so.order_id = ke.order_id
+        join inbound_detail id on id.inbound_detail_id = so.inbound_detail_id
+        join foreign_product fp on fp.foreign_product_id = id.foreign_product_id
+        where ke.account_id in
+        <foreach collection="accountIds" item="accountId" open="(" close=")" separator=",">
+            #{accountId}
+        </foreach>
+            and ke.settlement_status = 'PROVISIONAL'
+            and so.status = 'EXECUTED'
+            and YEAR(ke.final_at) = #{year}
+            and #{calcBaseTime} &gt;= ke.provisional_at
+    </select>
+
+    <select id="selectTaxRules" resultType="TaxRuleDTO">
+        select
+            rule_id,
+            rule_type,
+            rule_value,
+            valid_from,
+            valid_to
+        from tax_rule
+    </select>
+
+    <select id="selectExternalBuysByAccountIdsAndYear" resultType="ExternalBuyDTO">
+        select
+            a.account_id,
+            tpj.trade_date,
+            tpj.net_buy_amount,
+            coalesce(tpj.fund_name, tpj.ticker) as product_label
+        from target_product_judgement tpj
+        join customer c on c.ci_hash = tpj.ci_hash
+        join account a on a.customer_id = c.customer_id
+        where a.account_id in
+        <foreach collection="accountIds" item="accountId" open="(" close=")" separator=",">
+            #{accountId}
+        </foreach>
+            and tpj.is_target = true
+            and YEAR(tpj.trade_date) = #{year}
+            and #{calcBaseTime} >= tpj.judged_at
+    </select>
+
+    <insert id="insertCalculation" parameterType="TaxCalculationDTO"
+            useGeneratedKeys="true" keyProperty="calcId">
+    insert into tax_calculation
+    (account_id, calculated_at, basis_type, weighted_sell, original_gain_amount,
+    weighted_gain, weighted_external_amount, adjust_ratio, final_deduction, final_tax)
+    values
+    (#{accountId}, #{calculatedAt}, #{basisType}, #{weightedSell}, #{originalGainAmount},
+    #{weightedGain}, #{weightedExternalAmount}, #{adjustRatio}, #{finalDeduction}, #{finalTax})
+    </insert>
+
+    <select id="existsByAccountAndBasis" resultType="boolean">
+        select exists(
+            select 1
+            from tax_calculation
+            where account_id = #{accountId} and basis_type = #{basisType}
+        )
+    </select>
+
+    <select id="selectLatestCalculation" resultType="TaxCalculationDTO">
+        select
+            calc_id,
+            account_id,
+            calculated_at,
+            basis_type,
+            weighted_sell,
+            original_gain_amount,
+            weighted_gain,
+            weighted_external_amount,
+            adjust_ratio,
+            final_deduction,
+            final_tax
+        from tax_calculation
+        where account_id = #{accountId}
+        order by calculated_at desc, calc_id desc
+        limit 1
+    </select>
+
+    <select id="selectCalculationByAccountAndBasis" resultType="TaxCalculationDTO">
+        select
+            calc_id,
+            account_id,
+            calculated_at,
+            basis_type,
+            weighted_sell,
+            original_gain_amount,
+            weighted_gain,
+            weighted_external_amount,
+            adjust_ratio,
+            final_deduction,
+            final_tax
+        from tax_calculation
+        where account_id = #{accountId} and basis_type = #{basisType}
+    </select>
+
+    <select id="selectHeldLotsByAccountId" resultType="HeldLotDTO">
+        select
+            id.inbound_detail_id,
+            id.foreign_product_id,
+            fp.ticker,
+            fp.name,
+            fp.market,
+            fp.currency,
+            id.purchase_fx_rate,
+            id.purchase_price,
+            id.current_qty,
+            id.purchase_date,
+            concat(fp.ticker, ' ', fp.name) as product_label
+        from inbound_detail id
+        join inbound i on i.inbound_id = id.inbound_id
+        join foreign_product fp on fp.foreign_product_id = id.foreign_product_id
+        where i.account_id = #{accountId}
+            and id.current_qty > 0
+        order by id.purchase_date asc, id.inbound_detail_id asc
+    </select>
+
+    <select id="countUnconfirmedFinalReport" resultType="int">
+        select count(*)
+        from tax_snapshot ts
+        where ts.final_tax > 0
+            and not exists (
+                select 1 from tax_calculation tc
+                where tc.account_id = ts.account_id and tc.basis_type = 'FINAL_REPORT'
+            )
+    </select>
+
+    <select id="countUnprocessedClawback" resultType="int">
+        select count(*)
+        from account a
+        join tax_calculation tc on tc.account_id = a.account_id and tc.basis_type = 'FINAL_REPORT'
+        where a.benefit = 'IMPOSSIBLE'
+            and not exists (
+                select 1 from tax_calculation tc2
+                where tc2.account_id = a.account_id and tc2.basis_type = 'EARLY_WITHDRAWAL_CLAWBACK'
+            )
+    </select>
+
+    <select id="countBenefitChangedSince" resultType="int">
+        select count(distinct account_id)
+        from account_benefit_log
+        where changed_at between #{since} and #{until}
+    </select>
+
+</mapper>

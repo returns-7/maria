@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.app.maria.domain.accountclosure.mapper.AccountClosureMapper">
+    <!--AccountClosureDTO를 받아 해지 신청 한 건을 저장하고, 영향받은 행 수 int를 반환-->
+    <insert id="insertClosureRequest" parameterType="com.app.maria.domain.accountclosure.dto.AccountClosureDTO"
+    useGeneratedKeys="true" keyProperty="closureRequestId">
+        INSERT INTO account_closure_request(
+        account_id,
+        destination_general_account_id,
+        early_withdrawal_agreed,
+        status,
+        requested_at
+        )
+        VALUES (
+        #{accountId},
+        #{destinationGeneralAccountId},
+        #{earlyWithdrawalAgreed},
+        #{status},
+        #{requestedAt}
+        )
+    </insert>
+
+    <!--해지 승인 시 신청 건을 잠금 조회하는 select-->
+    <select id="selectByIdForUpdate" parameterType="Long" resultType="AccountClosureDTO">
+        SELECT *
+        FROM account_closure_request
+        WHERE closure_request_id = #{closureRequestId}
+        FOR UPDATE
+    </select>
+
+    <!--승인 완료 처리-->
+    <update id ="completeClosureRequest">
+        UPDATE account_closure_request
+        SET status = 'COMPLETED',
+        processed_at = #{processedAt},
+        processed_by = #{processedBy},
+        withdrawal_id = #{withdrawalId}
+        WHERE closure_request_id = #{closureRequestId}
+        AND status = 'REQUESTED'
+    </update>
+
+    <!--반려 처리-->
+    <update id="rejectClosureRequest">
+        UPDATE account_closure_request
+        SET status = 'REJECTED',
+        processed_at = #{processedAt},
+        processed_by = #{processedBy},
+        rejection_reason = #{rejectionReason}
+        WHERE closure_request_id = #{closureRequestId}
+        AND status = 'REQUESTED'
+    </update>
+
+    <select id = "selectByStatus" resultType="AccountClosureDTO" >
+        SELECT acr.*,
+               c.name AS customer_name,
+               a.account_no AS account_no,
+               a.amount AS account_amount
+        FROM account_closure_request acr
+        JOIN account a ON a.account_id = acr.account_id
+        JOIN customer c ON c.customer_id = a.customer_id
+        WHERE acr.status = #{status}
+        ORDER BY acr.requested_at ASC, acr.closure_request_id ASC
+    </select>
+
+    <select id="selectById" parameterType="Long" resultType="AccountClosureDTO">
+        SELECT acr.*,
+               c.name AS customer_name,
+               a.account_no AS account_no,
+               a.amount AS account_amount
+        FROM account_closure_request acr
+        JOIN account a ON a.account_id = acr.account_id
+        JOIN customer c ON c.customer_id = a.customer_id
+        WHERE acr.closure_request_id = #{closureRequestId}
+    </select>
+
+
+
+
+
+</mapper>

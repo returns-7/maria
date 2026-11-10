@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.app.maria.domain.externaltradesync.mapper.ExternalTradeSyncCursorMapper">
+
+    <select id="selectByCustomerId" parameterType="Long" resultType="ExternalTradeSyncCursorDTO">
+        SELECT cursor_id, customer_id, last_synced_trade_date
+        FROM external_trade_sync_cursor
+        WHERE customer_id = #{customerId}
+    </select>
+
+    <insert id="upsertCursor" parameterType="ExternalTradeSyncCursorDTO">
+        INSERT INTO external_trade_sync_cursor (customer_id, last_synced_trade_date, updated_at)
+        VALUES (#{customerId}, #{lastSyncedTradeDate}, COALESCE(#{updatedAt}, CURRENT_TIMESTAMP))
+        ON DUPLICATE KEY UPDATE
+        last_synced_trade_date = VALUES(last_synced_trade_date),
+        updated_at = VALUES(updated_at)
+    </insert>
+
+</mapper>

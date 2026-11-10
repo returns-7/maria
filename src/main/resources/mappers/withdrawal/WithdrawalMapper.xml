@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.app.maria.domain.withdrawal.mapper.WithdrawalMapper">
+    <insert id = "insertWithdrawal" useGeneratedKeys="true" keyProperty="withdrawalId">
+        INSERT INTO withdrawal (
+        account_id,
+        requested_amount,
+        destination_account_no,
+        destination_general_account_id,
+        processed_at,
+        status
+        ) VALUES(
+        #{accountId},
+        #{requestedAmount},
+        #{destinationAccountNo},
+        #{destinationGeneralAccountId},
+        #{processedAt},
+        #{status}
+        )
+    </insert>
+
+    <update id = "updateWithdrawalStatus">
+        UPDATE withdrawal
+        SET status = #{status}
+        WHERE withdrawal_id = #{withdrawalId}
+    </update>
+
+    <insert id="insertWithdrawalAllocation" useGeneratedKeys="true" keyProperty="allocationId">
+        INSERT INTO withdrawal_allocation(
+        withdrawal_id,
+        left_amount_id,
+        allocated_amount,
+        withdrawal_at,
+        type
+        )VALUES(
+        #{withdrawalId},
+        #{leftAmountId},
+        #{allocatedAmount},
+        #{withdrawalAt},
+        #{type}
+
+        )
+    </insert>
+
+    <update id ="deductLeftAmount">
+        UPDATE left_amount
+        SET cur_amount = cur_amount - #{deductAmount}
+        WHERE left_amount.left_amount_id = #{leftAmountId}
+            AND cur_amount >= #{deductAmount}
+    </update>
+
+    <update id = "deductAccountAmount">
+        UPDATE account
+        SET amount = amount - #{requestedAmount}
+        WHERE account_id = #{accountId}
+        AND amount >= #{requestedAmount}
+
+    </update>
+
+    <select id="selectAvailableLeftAmountsByAccountId"
+            parameterType="Long"
+            resultType="com.app.maria.domain.withdrawal.dto.LeftAmountDTO">
+        SELECT la.left_amount_id, la.exchange_id, la.cur_amount, ke.final_at
+        FROM left_amount la JOIN krw_exchange ke on la.exchange_id=ke.exchange_id
+        WHERE ke.account_id = #{accountId}
+        AND ke.settlement_status = 'FINALIZED'
+        AND ke.final_at IS NOT NULL
+        AND la.cur_amount > 0
+        ORDER BY ke.final_at ASC, ke.exchange_id ASC
+    </select>
+
+    <select id="selectImmatureAllocatedAmountByWithdrawalId"
+            parameterType="Long"
+            resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(allocated_amount), 0)
+        FROM withdrawal_allocation
+        WHERE withdrawal_id = #{withdrawalId}
+        AND type = 'IMMATURE_PRINCIPAL_INCLUDED'
+    </select>
+
+    <sql id="withdrawalHistoryColumns">
+        SELECT w.withdrawal_id,
+               w.account_id,
+               c.name AS customer_name,
+               a.account_no AS ria_account_no,
+               w.requested_amount,
+               w.processed_at,
+               w.destination_account_no,
+               w.destination_general_account_id,
+               w.status,
+               COALESCE(SUM(CASE WHEN wa.type = 'EARNINGS_ONLY'
+                                 THEN wa.allocated_amount ELSE 0 END), 0) AS earnings_amount,
+               COALESCE(SUM(CASE WHEN wa.type = 'MATURED_PRINCIPAL_INCLUDED'
+                                 THEN wa.allocated_amount ELSE 0 END), 0) AS matured_principal_amount,
+               COALESCE(SUM(CASE WHEN wa.type = 'IMMATURE_PRINCIPAL_INCLUDED'
+                                 THEN wa.allocated_amount ELSE 0 END), 0) AS immature_principal_amount,
+               COUNT(wa.allocation_id) AS allocation_count,
+               COALESCE(SUM(CASE WHEN wa.type IN ('EARNINGS_ONLY', 'MATURED_PRINCIPAL_INCLUDED')
+                                 THEN 1 ELSE 0 END), 0) AS normal_allocation_count,
+               COALESCE(SUM(CASE WHEN wa.type = 'IMMATURE_PRINCIPAL_INCLUDED'
+                                 THEN 1 ELSE 0 END), 0) AS early_allocation_count
+        FROM withdrawal w
+        JOIN account a ON a.account_id = w.account_id
+        JOIN customer c ON c.customer_id = a.customer_id
+        LEFT JOIN withdrawal_allocation wa ON wa.withdrawal_id = w.withdrawal_id
+    </sql>
+
+    <sql id="withdrawalHistoryGroupBy">
+        GROUP BY w.withdrawal_id, w.account_id, c.name, a.account_no,
+                 w.requested_amount, w.processed_at, w.destination_account_no,
+                 w.destination_general_account_id, w.status
+    </sql>
+
+    <select id="selectWithdrawalHistories"
+            resultType="com.app.maria.domain.withdrawal.dto.WithdrawalHistoryDTO">
+        <include refid="withdrawalHistoryColumns"/>
+        <if test="status != null">
+            WHERE w.status = #{status}
+        </if>
+        <include refid="withdrawalHistoryGroupBy"/>
+        ORDER BY w.processed_at DESC, w.withdrawal_id DESC
+    </select>
+
+    <select id="selectWithdrawalHistoriesByAccountId"
+            parameterType="Long"
+            resultType="com.app.maria.domain.withdrawal.dto.WithdrawalHistoryDTO">
+        <include refid="withdrawalHistoryColumns"/>
+        WHERE w.account_id = #{accountId}
+        <include refid="withdrawalHistoryGroupBy"/>
+        ORDER BY w.processed_at DESC, w.withdrawal_id DESC
+    </select>
+
+    <select id="selectWithdrawalHistoryById"
+            parameterType="Long"
+            resultType="com.app.maria.domain.withdrawal.dto.WithdrawalHistoryDTO">
+        <include refid="withdrawalHistoryColumns"/>
+        WHERE w.withdrawal_id = #{withdrawalId}
+        <include refid="withdrawalHistoryGroupBy"/>
+    </select>
+
+    <select id="selectWithdrawalHistoryByIdAndAccountId"
+            resultType="com.app.maria.domain.withdrawal.dto.WithdrawalHistoryDTO">
+        <include refid="withdrawalHistoryColumns"/>
+        WHERE w.withdrawal_id = #{withdrawalId}
+        AND w.account_id = #{accountId}
+        <include refid="withdrawalHistoryGroupBy"/>
+    </select>
+
+    <select id="selectProvisionalAmountByAccountId"
+            parameterType="Long"
+            resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(provisional_amount), 0)
+        FROM krw_exchange
+        WHERE account_id = #{accountId}
+        AND settlement_status = 'PROVISIONAL'
+    </select>
+
+    <select id="selectAllocationHistoriesByWithdrawalId"
+            parameterType="Long"
+            resultType="com.app.maria.domain.withdrawal.dto.WithdrawalAllocationHistoryDTO">
+        SELECT wa.allocation_id,
+               wa.left_amount_id,
+               la.exchange_id,
+               wa.allocated_amount,
+               wa.withdrawal_at,
+               wa.type,
+               ke.final_at,
+               fp.name AS product_name,
+               fp.ticker
+        FROM withdrawal_allocation wa
+        LEFT JOIN left_amount la ON la.left_amount_id = wa.left_amount_id
+        LEFT JOIN krw_exchange ke ON ke.exchange_id = la.exchange_id
+        LEFT JOIN sell_order so ON so.order_id = ke.order_id
+        LEFT JOIN foreign_product fp ON fp.foreign_product_id = so.foreign_product_id
+        WHERE wa.withdrawal_id = #{withdrawalId}
+        ORDER BY wa.allocation_id ASC
+    </select>
+
+</mapper>

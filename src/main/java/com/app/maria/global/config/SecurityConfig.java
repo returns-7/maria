@@ -1,114 +1,121 @@
 package com.app.maria.global.config;
 
-import com.app.maria.domain.member.type.MemberRole;
+import com.app.maria.global.jwt.JwtAuthenticationFilter;
+import com.app.maria.global.jwt.JwtTokenProvider;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
-
-import java.io.IOException;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
+@RequiredArgsConstructor
+@EnableMethodSecurity
 public class SecurityConfig {
 
-  private static final String[] PUBLIC_URLS = {
-      "/",
-      "/favicon.ico",
+    private final JwtTokenProvider jwtTokenProvider;
 
-      // 정적 리소스와 SPA 진입점
-      "/css/**",
-      "/js/**",
-      "/images/**",
+    // ─── Order(1): 관리자 API — JWT 필수 ──────────────────────────────────────
+    @Bean
+    @Order(1)
+    public SecurityFilterChain adminApiChain(HttpSecurity http) throws Exception {
+        http.securityMatcher("/api/admin/**")
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .csrf(AbstractHttpConfigurer::disable)
+                .formLogin(AbstractHttpConfigurer::disable)
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .logout(AbstractHttpConfigurer::disable)
+                .requestCache(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(
+                        auth ->
+                                auth.dispatcherTypeMatchers(DispatcherType.ERROR)
+                                        .permitAll()
+                                        .anyRequest()
+                                        .authenticated())
+                .exceptionHandling(
+                        ex ->
+                                ex.authenticationEntryPoint(
+                                                (req, res, e) ->
+                                                        writeJsonError(
+                                                                res,
+                                                                HttpServletResponse.SC_UNAUTHORIZED,
+                                                                "UNAUTHORIZED",
+                                                                "로그인이 필요합니다."))
+                                        .accessDeniedHandler(
+                                                (req, res, e) ->
+                                                        writeJsonError(
+                                                                res,
+                                                                HttpServletResponse.SC_FORBIDDEN,
+                                                                "FORBIDDEN",
+                                                                "접근 권한이 없습니다.")))
+                .addFilterBefore(
+                        new JwtAuthenticationFilter(jwtTokenProvider),
+                        UsernamePasswordAuthenticationFilter.class);
 
-      // JWT 인증 API
-      "/api/auth/login",
-      "/api/auth/refresh",
+        return http.build();
+    }
 
-      // Swagger
-      "/swagger-ui/**",
-      "/swagger-ui.html",
-      "/api-docs/**"
-  };
+    // Order(2)는 CustomerSecurityConfig의 고객 세션 API가 사용한다.
+    // ─── Order(3): 화면·인증 엔드포인트 — 명시 허용 외 전부 차단 ──────────────
+    @Bean
+    @Order(3)
+    public SecurityFilterChain publicChain(HttpSecurity http) throws Exception {
+        http.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .csrf(AbstractHttpConfigurer::disable)
+                .formLogin(AbstractHttpConfigurer::disable)
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .logout(AbstractHttpConfigurer::disable)
+                .requestCache(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(
+                        auth ->
+                                auth.dispatcherTypeMatchers(DispatcherType.ERROR)
+                                        .permitAll()
+                                        // 인증 엔드포인트
+                                        .requestMatchers("/api/auth/**")
+                                        .permitAll()
+                                        // 컨테이너 헬스체크 (nginx가 /actuator/ 외부 접근을 막는다)
+                                        .requestMatchers("/actuator/health")
+                                        .permitAll()
+                                        // 정적 리소스
+                                        .requestMatchers(
+                                                "/",
+                                                "/favicon.ico",
+                                                "/css/**",
+                                                "/js/**",
+                                                "/images/**")
+                                        .permitAll()
+                                        // Thymeleaf 화면 라우트
+                                        .requestMatchers("/login", "/admin/**")
+                                        .permitAll()
+                                        // Swagger
+                                        .requestMatchers(
+                                                "/swagger-ui/**",
+                                                "/swagger-ui.html",
+                                                "/api-docs/**")
+                                        .permitAll()
+                                        // 나머지 전부 차단
+                                        .anyRequest()
+                                        .denyAll());
 
-  @Bean
-  public SecurityFilterChain securityFilterChain(
-      HttpSecurity http
-  ) throws Exception {
-    http
-        // JWT는 서버 세션을 사용하지 않는다.
-        .sessionManagement(session -> session
-            .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-        )
+        return http.build();
+    }
 
-        // Access Token을 Authorization 헤더로 전달하는 Stateless API 기준 설정이다.
-        .csrf(AbstractHttpConfigurer::disable)
-        .formLogin(AbstractHttpConfigurer::disable)
-        .httpBasic(AbstractHttpConfigurer::disable)
-        .logout(AbstractHttpConfigurer::disable)
-        .requestCache(AbstractHttpConfigurer::disable)
-
-        .authorizeHttpRequests(auth -> auth
-            .requestMatchers(PUBLIC_URLS)
-            .permitAll()
-
-            .requestMatchers("/api/admin/**")
-            .hasRole(MemberRole.ADMIN.name())
-
-            .requestMatchers("/api/manager/**")
-            .hasAnyRole(
-                MemberRole.MANAGER.name(),
-                MemberRole.ADMIN.name()
-            )
-
-//            .requestMatchers("/api/**")
-//            .authenticated()
-
-            // 화면 전환은 SPA가 담당하고 실제 데이터 접근은 API에서 검증한다.
-            .anyRequest()
-            .permitAll()
-        )
-
-        .exceptionHandling(exception -> exception
-            .authenticationEntryPoint((request, response, ex) ->
-                writeJsonError(
-                    response,
-                    HttpServletResponse.SC_UNAUTHORIZED,
-                    "UNAUTHORIZED",
-                    "로그인이 필요합니다."
-                )
-            )
-            .accessDeniedHandler((request, response, ex) ->
-                writeJsonError(
-                    response,
-                    HttpServletResponse.SC_FORBIDDEN,
-                    "FORBIDDEN",
-                    "접근 권한이 없습니다."
-                )
-            )
-        );
-
-    // JwtAuthenticationFilter 구현 후 UsernamePasswordAuthenticationFilter 앞에 등록한다.
-    return http.build();
-  }
-
-  private static void writeJsonError(
-      HttpServletResponse response,
-      int status,
-      String code,
-      String message
-  ) throws IOException {
-    response.setStatus(status);
-    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-    response.setCharacterEncoding("UTF-8");
-    response.getWriter().write("""
-        {
-          "code": "%s",
-          "message": "%s"
-        }
-        """.formatted(code, message));
-  }
+    private static void writeJsonError(
+            HttpServletResponse response, int status, String code, String message)
+            throws IOException {
+        response.setStatus(status);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter()
+                .write("{\"code\": \"%s\", \"message\": \"%s\"}".formatted(code, message));
+    }
 }

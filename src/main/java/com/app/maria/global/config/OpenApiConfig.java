@@ -19,13 +19,14 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info().title("MARIA").version("1.0"))
                 .components(
-                        new Components().addSecuritySchemes(securitySchemeName,
-                                new SecurityScheme()
-                                        .name(securitySchemeName)
-                                        .type(SecurityScheme.Type.HTTP)
-                                        .scheme("bearer")
-                                        .bearerFormat("JWT")
-                        )
-                );
+                        new Components()
+                                .addSecuritySchemes(
+                                        securitySchemeName,
+                                        new SecurityScheme()
+                                                .name(securitySchemeName)
+                                                .type(SecurityScheme.Type.HTTP)
+                                                .scheme("bearer")
+                                                .bearerFormat("JWT")))
+                .addSecurityItem(new SecurityRequirement().addList(securitySchemeName));
     }
 }

@@ -1,0 +1,247 @@
+/* 리턴증권 RIA 관리자 시스템 - 공용 레이아웃(사이드바 + 헤더) 스타일
+   claudedesign-handoff의 t4 목업 디자인 토큰을 CSS 커스텀 프로퍼티로 옮김 */
+
+:root {
+    --pageBg: #efeeec;
+    --headerBg: #ffffff;
+    --cardBg: #ffffff;
+    --cardBorder: rgba(0, 0, 0, 0.08);
+    --divider: rgba(0, 0, 0, 0.08);
+    --tableHeaderBg: #f5f4f2;
+    --trackBg: #eceae7;
+    --inputBg: #ffffff;
+    --inputBorder: rgba(0, 0, 0, 0.14);
+    --textPrimary: #1a1a1a;
+    --textSecondary: #45484d;
+    --textMuted: rgba(0, 0, 0, 0.5);
+    --accent: #2a78d6;
+    --accentBg: #eaf1fb;
+    --success: #1f8a4c;
+    --successBg: #e7f5ec;
+    --danger: #c53030;
+    --dangerBg: #fbe9e9;
+    --dangerRowBg: #fdf3f3;
+    --warning: #c2650c;
+    --warningBg: #fbeee0;
+    --info: #6d3fc9;
+    --infoBg: #f1ebfb;
+    --teal: #0f8b8d;
+    --tealBg: #e0f5f5;
+    --hoverBg: #f5f4f2;
+    --scrollbarThumb: #8b98aa;
+    --scrollbarTrack: #e7ebf0;
+}
+
+:root[data-theme="dark"] {
+    --pageBg: #14171c;
+    --headerBg: #1b1f27;
+    --cardBg: #1f2430;
+    --cardBorder: rgba(255, 255, 255, 0.1);
+    --divider: rgba(255, 255, 255, 0.1);
+    --tableHeaderBg: #262c39;
+    --trackBg: #2a3140;
+    --inputBg: #1b1f27;
+    --inputBorder: rgba(255, 255, 255, 0.16);
+    --textPrimary: #e8eaed;
+    --textSecondary: #b7bfc9;
+    --textMuted: rgba(255, 255, 255, 0.5);
+    --accent: #5b9bf0;
+    --accentBg: rgba(91, 155, 240, 0.16);
+    --success: #4cc785;
+    --successBg: rgba(76, 199, 133, 0.14);
+    --danger: #e2685f;
+    --dangerBg: rgba(226, 104, 95, 0.14);
+    --dangerRowBg: rgba(226, 104, 95, 0.08);
+    --warning: #e0972f;
+    --warningBg: rgba(224, 151, 47, 0.15);
+    --info: #a78bfa;
+    --infoBg: rgba(167, 139, 250, 0.16);
+    --teal: #4fd1c5;
+    --tealBg: rgba(79, 209, 197, 0.16);
+    --hoverBg: #262c39;
+    --scrollbarThumb: #56657a;
+    --scrollbarTrack: #202733;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --pageBg: #14171c;
+        --headerBg: #1b1f27;
+        --cardBg: #1f2430;
+        --cardBorder: rgba(255, 255, 255, 0.1);
+        --divider: rgba(255, 255, 255, 0.1);
+        --tableHeaderBg: #262c39;
+        --trackBg: #2a3140;
+        --inputBg: #1b1f27;
+        --inputBorder: rgba(255, 255, 255, 0.16);
+        --textPrimary: #e8eaed;
+        --textSecondary: #b7bfc9;
+        --textMuted: rgba(255, 255, 255, 0.5);
+        --accent: #5b9bf0;
+        --accentBg: rgba(91, 155, 240, 0.16);
+        --success: #4cc785;
+        --successBg: rgba(76, 199, 133, 0.14);
+        --danger: #e2685f;
+        --dangerBg: rgba(226, 104, 95, 0.14);
+        --dangerRowBg: rgba(226, 104, 95, 0.08);
+        --warning: #e0972f;
+        --warningBg: rgba(224, 151, 47, 0.15);
+        --info: #a78bfa;
+        --infoBg: rgba(167, 139, 250, 0.16);
+        --teal: #4fd1c5;
+        --tealBg: rgba(79, 209, 197, 0.16);
+        --hoverBg: #262c39;
+        --scrollbarThumb: #56657a;
+        --scrollbarTrack: #202733;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+/* 모든 페이지에서 동일한 스크롤바를 사용한다. */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbarThumb) var(--scrollbarTrack);
+}
+
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+    background: var(--scrollbarTrack);
+    border-radius: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: var(--scrollbarThumb);
+    border: 2px solid var(--scrollbarTrack);
+    border-radius: 8px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+}
+
+body {
+    font-family: "Pretendard Variable", Pretendard, system-ui, sans-serif;
+    background: var(--pageBg);
+    color: var(--textPrimary);
+    font-size: 13px;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.toast-container {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.toast {
+    max-width: min(360px, calc(100vw - 40px));
+    padding: 11px 14px;
+    border: 1px solid var(--cardBorder);
+    border-left: 3px solid var(--danger);
+    border-radius: 5px;
+    background: var(--cardBg);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+    color: var(--textPrimary);
+    font: 500 12px "Pretendard Variable", Pretendard, system-ui, sans-serif;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: 500 12.5px "Pretendard Variable", Pretendard, system-ui, sans-serif;
+    color: var(--textMuted);
+}
+
+.breadcrumb-current {
+    color: var(--textPrimary);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.breadcrumb-current:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.content {
+    flex: 1;
+    min-height: 0;
+    padding: 16px 20px;
+    overflow: auto;
+}
+
+/* 선택된 목록은 인출관리와 동일하게 파란 배경과 좌측 강조선을 유지한다. */
+.account-table tbody tr.is-selected,
+.sellorder-table tbody tr.is-selected,
+.tax-table tbody tr.is-selected,
+.settlement-table tbody tr.is-selected {
+    position: relative;
+    background: var(--accentBg) !important;
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.account-table tbody tr.is-selected td,
+.sellorder-table tbody tr.is-selected td,
+.tax-table tbody tr.is-selected td,
+.settlement-table tbody tr.is-selected td {
+    background: transparent !important;
+}
+
+.sellorder-table tbody tr:hover td,
+.tax-table tbody tr:hover td,
+.settlement-table tbody tr:hover td {
+    background: var(--hoverBg);
+}
+
+.account-table tbody tr.is-selected:hover td,
+.sellorder-table tbody tr.is-selected:hover td,
+.tax-table tbody tr.is-selected:hover td,
+.settlement-table tbody tr.is-selected:hover td {
+    background: transparent !important;
+}
+
+body[data-admin-role="admin"] .breadcrumb,
+body[data-admin-role="reviewer"] .breadcrumb,
+body[data-admin-role="settlement"] .breadcrumb,
+body[data-admin-role="viewer"] .breadcrumb {
+    font-size: 12.5px;
+}
+
+/* 계좌번호 표시 공통 스타일 - 입고 관리 페이지의 .ib-list-item-ticker 색과 통일 */
+.account-no-fmt {
+    color: var(--accent);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}

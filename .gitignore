@@ -8,19 +8,13 @@ HELP.md
 .env.*
 !.env.example
 
-/src/main/resources/application.yml
-/src/main/resources/application.yaml
-/src/main/resources/application-*.yml
-/src/main/resources/application-*.yaml
-
-!/src/main/resources/application.example.yml
-!/src/main/resources/application.example.yaml
-
-!application.example.yml
-
 # Gradle
 .gradle/
 build/
+
+# Local scratch/log files
+scratchpad/
+Claude outputs/
 
 ### STS ###
 .apt_generated
@@ -42,3 +36,9 @@ bin/
 out/
 !**/src/main/**/out/
 !**/src/test/**/out/
+.omc
+db/dummy_local_seed.sql
+
+# kkiru 지식 문서는 로컬 docs/ 제외 규칙에서 복원
+!src/main/resources/kkiru/docs/
+!src/main/resources/kkiru/docs/**

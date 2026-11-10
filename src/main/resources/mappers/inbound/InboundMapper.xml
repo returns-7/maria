@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.app.maria.domain.inbound.mapper.InboundMapper">
+
+    <insert id="insertInbound" parameterType="InboundDTO"
+            useGeneratedKeys="true" keyProperty="inboundId">
+        INSERT INTO inbound (account_id, requested_qty, current_holding_at_request, approved_qty, processed_at)
+        VALUES (#{accountId}, #{requestedQty}, #{currentHoldingAtRequest}, #{approvedQty}, #{processedAt})
+    </insert>
+
+    <insert id="insertInboundDetail" parameterType="InboundDetailDTO"
+            useGeneratedKeys="true" keyProperty="inboundDetailId">
+        INSERT INTO inbound_detail (inbound_id, foreign_product_id, registrable_stock_id, source_broker, qty, current_qty,
+        recorded_at, purchase_date, purchase_price, purchase_currency, purchase_fx_rate,
+        source_general_account_id, account_type)
+        VALUES (#{inboundId}, #{foreignProductId}, #{registrableStockId}, #{sourceBroker}, #{qty}, #{currentQty},
+        #{recordedAt}, #{purchaseDate}, #{purchasePrice}, #{purchaseCurrency}, #{purchaseFxRate},
+        #{sourceGeneralAccountId}, #{accountType})
+    </insert>
+
+    <insert id="insertInboundMin" parameterType="InboundMinDTO"
+            useGeneratedKeys="true" keyProperty="inboundMinId">
+        INSERT INTO inbound_min (inbound_detail_id, requested_qty, approved_qty, snapshot_qty)
+        VALUES (#{inboundDetailId}, #{requestedQty}, #{approvedQty}, #{snapshotQty})
+    </insert>
+
+    <select id="sumApprovedQtyByAccountAndProduct" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(id.qty), 0)
+        FROM inbound_detail id
+        JOIN inbound i ON i.inbound_id = id.inbound_id
+        WHERE i.account_id = #{accountId}
+        AND id.foreign_product_id = #{foreignProductId}
+    </select>
+
+    <select id="selectInboundDetailById" resultType="InboundDetailDTO">
+        SELECT inbound_detail_id, inbound_id, foreign_product_id, source_broker, qty, current_qty,
+        purchase_date, purchase_price, purchase_currency, purchase_fx_rate, source_general_account_id
+        FROM inbound_detail
+        WHERE inbound_detail_id = #{inboundDetailId}
+    </select>
+
+    <update id="decreaseCurrentQty">
+        UPDATE inbound_detail
+        SET current_qty = current_qty - #{qty}
+        WHERE inbound_detail_id = #{inboundDetailId} AND current_qty >= #{qty}
+    </update>
+
+    <select id="selectFifoLots" resultType="InboundDetailDTO">
+        SELECT id.inbound_detail_id, id.inbound_id, id.foreign_product_id, id.source_broker, id.qty, id.current_qty,
+               id.purchase_date, id.purchase_price, id.purchase_currency, id.purchase_fx_rate, id.source_general_account_id
+        FROM inbound_detail id
+        JOIN inbound i ON i.inbound_id = id.inbound_id
+        WHERE i.account_id = #{accountId}
+        AND id.foreign_product_id = #{foreignProductId}
+        AND id.current_qty > 0
+        ORDER BY id.purchase_date ASC, id.inbound_detail_id ASC
+    </select>
+
+    <select id="sumApprovedQtyBySourceGeneralAccount" resultType="SourceLotApprovedQtyDTO">
+        SELECT
+        id.source_general_account_id AS generalAccountId,
+        SUM(id.qty) AS approvedQty
+        FROM inbound_detail id
+        JOIN inbound i ON i.inbound_id = id.inbound_id
+        WHERE i.account_id = #{accountId}
+        AND id.foreign_product_id = #{foreignProductId}
+        AND id.source_general_account_id IS NOT NULL
+        GROUP BY id.source_general_account_id
+    </select>
+
+    <select id="selectHoldingsByAccount" parameterType="Long" resultType="InboundHoldingDTO">
+        SELECT
+        id.foreign_product_id AS foreignProductId,
+        SUM(id.current_qty)   AS currentQty
+        FROM inbound_detail id
+        JOIN inbound i ON i.inbound_id = id.inbound_id
+        WHERE i.account_id = #{accountId}
+        AND id.current_qty > 0
+        GROUP BY id.foreign_product_id
+        ORDER BY id.foreign_product_id
+    </select>
+
+    <select id="selectInbounds" resultType="InboundListDTO">
+        SELECT
+        i.inbound_id     AS inboundId,
+        i.account_id     AS accountId,
+        a.account_no     AS accountNo,
+        c.name           AS customerName,
+        fp.ticker        AS ticker,
+        fp.name          AS productName,
+        id.source_broker AS sourceBroker,
+        i.requested_qty  AS requestedQty,
+        i.current_holding_at_request AS currentHoldingAtRequest,
+        im.snapshot_qty  AS snapshotQty,
+        i.approved_qty   AS approvedQty,
+        im.snapshot_qty - (
+        SELECT COALESCE(SUM(id2.qty), 0)
+        FROM inbound_detail id2
+        JOIN inbound i2 ON i2.inbound_id = id2.inbound_id
+        WHERE i2.account_id = i.account_id
+        AND id2.foreign_product_id = id.foreign_product_id
+        ) AS remainingQty,
+        i.processed_at   AS processedAt
+        FROM inbound i
+        JOIN account a ON a.account_id = i.account_id
+        JOIN customer c ON c.customer_id = a.customer_id
+        JOIN inbound_detail id ON id.inbound_detail_id = (
+        SELECT MIN(id3.inbound_detail_id)
+        FROM inbound_detail id3
+        WHERE id3.inbound_id = i.inbound_id
+        )
+        JOIN foreign_product fp ON fp.foreign_product_id = id.foreign_product_id
+        JOIN inbound_min im ON im.inbound_detail_id = id.inbound_detail_id
+        ORDER BY i.processed_at DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="selectLotsByInboundIds" resultType="InboundLotDTO">
+        SELECT
+        id.inbound_id AS inboundId,
+        id.inbound_detail_id AS inboundDetailId,
+        id.source_broker AS sourceBroker,
+        id.qty AS qty,
+        id.current_qty AS currentQty,
+        id.recorded_at AS recordedAt,
+        id.account_type AS accountType,
+        id.purchase_date AS purchaseDate,
+        id.purchase_price AS purchasePrice,
+        id.purchase_currency AS purchaseCurrency,
+        id.purchase_fx_rate AS purchaseFxRate
+        FROM inbound_detail id
+        WHERE id.inbound_id IN
+        <foreach item="inboundId" collection="inboundIds" open="(" separator="," close=")">
+            #{inboundId}
+        </foreach>
+        ORDER BY id.inbound_id, id.purchase_date ASC
+    </select>
+
+    <select id="countInbounds" resultType="int">
+        SELECT COUNT(*) FROM inbound
+    </select>
+
+    <select id="selectTodaySummary" resultType="InboundSummaryDTO">
+        SELECT
+        COUNT(*) AS todayProcessedCount,
+        COALESCE(SUM(CASE WHEN approved_qty = 0 THEN 1 ELSE 0 END), 0) AS todayRejectedCount,
+        COALESCE(SUM(CASE WHEN approved_qty > 0 AND approved_qty &lt; requested_qty THEN 1 ELSE 0 END), 0) AS todayReducedCount,
+        COALESCE(SUM(approved_qty), 0) AS todayApprovedQtySum
+        FROM inbound
+        WHERE processed_at &gt;= #{today} AND processed_at &lt; #{tomorrow}
+    </select>
+
+    <select id="selectAccountsWithInbounds" resultType="InboundAccountSummaryDTO">
+        SELECT
+        a.account_id AS accountId,
+        a.account_no AS accountNo,
+        c.name AS customerName,
+        COUNT(*) AS inboundCount,
+        MAX(i.processed_at) AS lastProcessedAt
+        FROM inbound i
+        JOIN account a ON a.account_id = i.account_id
+        JOIN customer c ON c.customer_id = a.customer_id
+        <where>
+            <if test="keyword != null and keyword != ''">
+                (c.name LIKE CONCAT('%', #{keyword}, '%') OR a.account_no LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+        GROUP BY a.account_id, a.account_no, c.name
+        ORDER BY MAX(i.processed_at) DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countAccountsWithInbounds" resultType="int">
+        SELECT COUNT(*) FROM (
+        SELECT a.account_id
+        FROM inbound i
+        JOIN account a ON a.account_id = i.account_id
+        JOIN customer c ON c.customer_id = a.customer_id
+        <where>
+            <if test="keyword != null and keyword != ''">
+                (c.name LIKE CONCAT('%', #{keyword}, '%') OR a.account_no LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+        GROUP BY a.account_id
+        ) counted
+    </select>
+
+    <select id="selectInboundsByAccountIdOrdered" resultType="InboundListDTO">
+        SELECT
+        i.inbound_id        AS inboundId,
+        fp.foreign_product_id AS foreignProductId,
+        i.account_id        AS accountId,
+        a.account_no        AS accountNo,
+        c.name              AS customerName,
+        fp.ticker           AS ticker,
+        fp.name             AS productName,
+        id.source_broker AS sourceBroker,
+        i.requested_qty  AS requestedQty,
+        i.current_holding_at_request AS currentHoldingAtRequest,
+        im.snapshot_qty  AS snapshotQty,
+        i.approved_qty   AS approvedQty,
+        im.snapshot_qty - (
+        SELECT COALESCE(SUM(id2.qty), 0)
+        FROM inbound_detail id2
+        JOIN inbound i2 ON i2.inbound_id = id2.inbound_id
+        WHERE i2.account_id = i.account_id
+        AND id2.foreign_product_id = id.foreign_product_id
+        ) AS remainingQty,
+        i.processed_at   AS processedAt
+        FROM inbound i
+        JOIN account a ON a.account_id = i.account_id
+        JOIN customer c ON c.customer_id = a.customer_id
+        JOIN inbound_detail id ON id.inbound_detail_id = (
+        SELECT MIN(id3.inbound_detail_id)
+        FROM inbound_detail id3
+        WHERE id3.inbound_id = i.inbound_id
+        )
+        JOIN foreign_product fp ON fp.foreign_product_id = id.foreign_product_id
+        JOIN inbound_min im ON im.inbound_detail_id = id.inbound_detail_id
+        WHERE i.account_id = #{accountId}
+        ORDER BY ${orderBy}
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countInboundsByAccountId" resultType="int">
+        SELECT COUNT(*) FROM inbound WHERE account_id = #{accountId}
+    </select>
+
+    <select id="selectPriorApprovals" resultType="InboundPriorApprovalDTO">
+        SELECT
+        i.inbound_id    AS inboundId,
+        i.requested_qty AS requestedQty,
+        i.approved_qty  AS approvedQty,
+        i.processed_at  AS processedAt
+        FROM inbound i
+        WHERE i.account_id = (SELECT account_id FROM inbound WHERE inbound_id = #{inboundId})
+        AND i.inbound_id != #{inboundId}
+        AND EXISTS (
+        SELECT 1 FROM inbound_detail id
+        WHERE id.inbound_id = i.inbound_id
+        AND id.foreign_product_id = (
+        SELECT foreign_product_id FROM inbound_detail
+        WHERE inbound_id = #{inboundId}
+        ORDER BY inbound_detail_id ASC LIMIT 1
+        )
+        )
+        ORDER BY i.processed_at ASC
+    </select>
+
+    <select id="sumApprovedQtyByAccountAndProductAndSourceGeneralAccount" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(id.qty), 0)
+        FROM inbound_detail id
+        JOIN inbound i ON i.inbound_id = id.inbound_id
+        WHERE i.account_id = #{accountId}
+        AND id.foreign_product_id = #{foreignProductId}
+        AND id.source_general_account_id = #{sourceGeneralAccountId}
+    </select>
+
+    <select id="sumApprovedQtyByAccountAndRegistrableStockId" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(id.qty), 0)
+        FROM inbound_detail id
+        JOIN inbound i ON i.inbound_id = id.inbound_id
+        WHERE i.account_id = #{accountId}
+        AND id.registrable_stock_id = #{registrableStockId}
+    </select>
+
+    <select id="existsNullOriginByAccountAndProductAndSourceGeneralAccount" resultType="boolean">
+        SELECT COUNT(*) > 0
+        FROM inbound_detail id
+        JOIN inbound i ON i.inbound_id = id.inbound_id
+        WHERE i.account_id = #{accountId}
+        AND id.foreign_product_id = #{foreignProductId}
+        AND id.source_general_account_id = #{sourceGeneralAccountId}
+        AND id.registrable_stock_id IS NULL
+    </select>
+
+    <select id="selectInboundByIdAndAccountId" resultType="InboundDTO">
+        SELECT inbound_id, account_id, requested_qty, current_holding_at_request, approved_qty, processed_at
+        FROM inbound
+        WHERE inbound_id = #{inboundId} AND account_id = #{accountId}
+    </select>
+
+    <select id="selectDetailsByInboundId" resultType="InboundDetailDTO">
+        SELECT inbound_detail_id, inbound_id, foreign_product_id, registrable_stock_id,
+               source_broker, qty, current_qty, recorded_at,
+               purchase_date, purchase_price, purchase_currency, purchase_fx_rate,
+               source_general_account_id, account_type
+        FROM inbound_detail
+        WHERE inbound_id = #{inboundId}
+        ORDER BY inbound_detail_id ASC
+    </select>
+
+    <select id="sumOutboundQtyBySourceGeneralAccount" resultType="SourceLotApprovedQtyDTO">
+        SELECT
+        id.source_general_account_id AS generalAccountId,
+        COALESCE(SUM(o.qty), 0) AS approvedQty
+        FROM outbound o
+        JOIN inbound_detail id ON id.inbound_detail_id = o.inbound_detail_id
+        JOIN inbound i ON i.inbound_id = id.inbound_id
+        WHERE i.account_id = #{accountId}
+        AND id.foreign_product_id = #{foreignProductId}
+        AND id.source_general_account_id IS NOT NULL
+        GROUP BY id.source_general_account_id
+    </select>
+
+    <select id="sumOutboundQtyByAccountAndProduct" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(o.qty), 0)
+        FROM outbound o
+        JOIN inbound_detail id ON id.inbound_detail_id = o.inbound_detail_id
+        JOIN inbound i ON i.inbound_id = id.inbound_id
+        WHERE i.account_id = #{accountId}
+        AND id.foreign_product_id = #{foreignProductId}
+    </select>
+
+    <select id="sumOutboundQtyByAccountAndProductAndSourceGeneralAccount" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(o.qty), 0)
+        FROM outbound o
+        JOIN inbound_detail id ON id.inbound_detail_id = o.inbound_detail_id
+        JOIN inbound i ON i.inbound_id = id.inbound_id
+        WHERE i.account_id = #{accountId}
+        AND id.foreign_product_id = #{foreignProductId}
+        AND id.source_general_account_id = #{sourceGeneralAccountId}
+    </select>
+
+    <select id="sumOutboundQtyByAccountAndRegistrableStock" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(o.qty), 0)
+        FROM outbound o
+        JOIN inbound_detail id ON id.inbound_detail_id = o.inbound_detail_id
+        JOIN inbound i ON i.inbound_id = id.inbound_id
+        WHERE i.account_id = #{accountId}
+        AND id.registrable_stock_id = #{registrableStockId}
+    </select>
+
+</mapper>

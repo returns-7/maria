@@ -1,0 +1,29 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:tax_batch_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema-batchtest.sql
+  jpa:
+    hibernate:
+      ddl-auto: none
+  cache:
+    type: simple
+  batch:
+    job:
+      enabled: false
+    jdbc:
+      initialize-schema: always
+
+kkiru:
+  docs:
+    enabled: false
+custom.risk.current-stock-cache-ttl-seconds: 60
+custom.risk.current-stock-cache-max-tickers: 77

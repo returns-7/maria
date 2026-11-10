@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.app.maria.domain.settlement.mapper.SettlementItemMapper">
+
+    <insert id="insertItemsForTargets" parameterType="SettlementBatchDTO">
+        INSERT INTO settlement_item (
+            batch_id,
+            exchange_id,
+            result,
+            processed_at,
+            failure_code,
+            failure_message
+        )
+        SELECT
+            #{batchId},
+            ke.exchange_id,
+            NULL,
+            NULL,
+            NULL,
+            NULL
+        FROM krw_exchange ke
+        INNER JOIN sell_order so
+            ON so.order_id = ke.order_id
+        WHERE ke.settlement_status = 'PROVISIONAL'
+          AND ke.final_at IS NOT NULL
+          AND CAST(ke.final_at AS DATE) &lt;= CAST(#{executedAt} AS DATE)
+          AND so.status = 'EXECUTED'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM settlement_item existing_item
+              WHERE existing_item.batch_id = #{batchId}
+                AND existing_item.exchange_id = ke.exchange_id
+          )
+        ORDER BY ke.exchange_id
+    </insert>
+
+    <select id="selectPendingItems" parameterType="SettlementItemDTO" resultType="SettlementItemDTO">
+        SELECT
+            item_id,
+            batch_id,
+            exchange_id,
+            result,
+            processed_at,
+            failure_code,
+            failure_message
+        FROM settlement_item
+        WHERE batch_id = #{batchId}
+          AND result IS NULL
+          AND item_id &gt; #{itemId}
+        ORDER BY item_id
+        LIMIT 100
+    </select>
+
+    <update id="updateItemResult" parameterType="SettlementItemDTO">
+        UPDATE settlement_item
+        SET result = #{result},
+            processed_at = #{processedAt},
+            failure_code = #{failureCode},
+            failure_message = #{failureMessage}
+        WHERE item_id = #{itemId}
+          AND result IS NULL
+          AND processed_at IS NULL
+    </update>
+
+    <update id="markPendingItemsFailed" parameterType="SettlementItemDTO">
+        UPDATE settlement_item
+        SET result = #{result},
+            processed_at = #{processedAt},
+            failure_code = #{failureCode},
+            failure_message = #{failureMessage}
+        WHERE batch_id = #{batchId}
+          AND result IS NULL
+          AND processed_at IS NULL
+    </update>
+
+    <insert id="insertRetryItem" parameterType="SettlementItemDTO" useGeneratedKeys="true" keyProperty="itemId" keyColumn="item_id">
+        INSERT INTO settlement_item (batch_id, exchange_id, result, processed_at, failure_code, failure_message)
+        SELECT #{batchId}, failed.exchange_id, NULL, NULL, NULL, NULL
+        FROM settlement_item failed
+        WHERE failed.item_id = #{itemId}
+          AND failed.batch_id = #{batchId}
+          AND failed.result = 'FAILED'
+          AND NOT EXISTS (
+              SELECT 1 FROM settlement_item succeeded
+              WHERE succeeded.exchange_id = failed.exchange_id AND succeeded.result = 'SUCCESS'
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM settlement_item pending
+              WHERE pending.exchange_id = failed.exchange_id AND pending.result IS NULL
+          )
+    </insert>
+
+    <insert id="insertRetryItemsForFailedBatch" parameterType="Long">
+        INSERT INTO settlement_item (batch_id, exchange_id, result, processed_at, failure_code, failure_message)
+        SELECT latest.batch_id, latest.exchange_id, NULL, NULL, NULL, NULL
+        FROM settlement_item latest
+        WHERE latest.batch_id = #{batchId}
+          AND latest.result = 'FAILED'
+          AND NOT EXISTS (
+              SELECT 1 FROM settlement_item newer
+              WHERE newer.batch_id = latest.batch_id
+                AND newer.exchange_id = latest.exchange_id
+                AND newer.item_id &gt; latest.item_id
+          )
+    </insert>
+
+    <select id="selectItemById" parameterType="Long" resultType="SettlementItemDTO">
+        SELECT item_id, batch_id, exchange_id, result, processed_at, failure_code, failure_message
+        FROM settlement_item
+        WHERE item_id = #{itemId}
+    </select>
+
+    <select id="selectItemByIdForUpdate" parameterType="Long" resultType="SettlementItemDTO">
+        SELECT item_id, batch_id, exchange_id, result, processed_at, failure_code, failure_message
+        FROM settlement_item
+        WHERE item_id = #{itemId}
+        FOR UPDATE
+    </select>
+
+    <select id="selectItemsByExchangeIdForUpdate" parameterType="Long" resultType="SettlementItemDTO">
+        SELECT item_id, batch_id, exchange_id, result, processed_at, failure_code, failure_message
+        FROM settlement_item
+        WHERE exchange_id = #{exchangeId}
+        FOR UPDATE
+    </select>
+
+    <select id="existsSuccessfulItemByExchangeId" parameterType="Long" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM settlement_item WHERE exchange_id = #{exchangeId} AND result = 'SUCCESS'
+        )
+    </select>
+
+    <select id="existsPendingItemByExchangeId" parameterType="Long" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM settlement_item WHERE exchange_id = #{exchangeId} AND result IS NULL
+        )
+    </select>
+
+    <select id="countPendingItems" parameterType="Long" resultType="int">
+        SELECT COUNT(*)
+        FROM settlement_item
+        WHERE batch_id = #{batchId}
+          AND result IS NULL
+    </select>
+
+    <select id="countFailedItems" parameterType="Long" resultType="int">
+        SELECT COUNT(*)
+        FROM settlement_item
+        WHERE batch_id = #{batchId}
+          AND result = 'FAILED'
+    </select>
+
+    <select id="isAccountSettlementCompleted" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM settlement_item latest
+            INNER JOIN krw_exchange ke
+                ON ke.exchange_id = latest.exchange_id
+            WHERE latest.batch_id = #{batchId}
+              AND ke.account_id = #{accountId}
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM settlement_item newer
+                  WHERE newer.batch_id = latest.batch_id
+                    AND newer.exchange_id = latest.exchange_id
+                    AND newer.item_id &gt; latest.item_id
+              )
+            GROUP BY ke.account_id
+            HAVING SUM(CASE WHEN latest.result = 'SUCCESS' AND ke.settlement_status = 'FINALIZED' THEN 1 ELSE 0 END) = COUNT(*)
+        )
+    </select>
+
+</mapper>

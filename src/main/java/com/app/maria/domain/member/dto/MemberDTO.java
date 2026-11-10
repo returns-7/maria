@@ -9,6 +9,6 @@ import lombok.*;
 @ToString
 @EqualsAndHashCode(of = "mid")
 public class MemberDTO {
-  private String mid;
-  private String mname;
+    private String mid;
+    private String mname;
 }

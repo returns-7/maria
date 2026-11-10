@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.app.maria.domain.settlement.mapper.SettlementBatchGuardMapper">
+
+    <insert id="ensureGuard" parameterType="java.time.LocalDate">
+        INSERT INTO settlement_batch_guard (
+            business_date
+        ) VALUES (
+            #{businessDate}
+        )
+        ON DUPLICATE KEY UPDATE
+            business_date = VALUES(business_date)
+    </insert>
+
+    <select id="selectGuardForUpdate" parameterType="java.time.LocalDate" resultType="java.time.LocalDate">
+        SELECT business_date
+        FROM settlement_batch_guard
+        WHERE business_date = #{businessDate}
+        FOR UPDATE
+    </select>
+
+</mapper>

@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.app.maria.domain.account.mapper.AccountMapper">
+    <select id="existsCustomerById" resultType="boolean" parameterType="Long">
+        SELECT EXISTS (
+            SELECT 1
+            FROM customer
+            WHERE customer_id = #{customerId}
+        )
+    </select>
+    <select id="selectByAccountId" resultType="AccountDTO" parameterType="Long">
+        SELECT
+        *
+        FROM account
+        WHERE account_id = #{accountId}
+    </select>
+    <select id="selectByAccountIdForUpdate" resultType = "AccountDTO" parameterType="Long">
+        SELECT *
+        FROM account
+        WHERE account_id = #{accountId}
+        FOR UPDATE
+    </select>
+    <select id="selectByCustomerId" resultType="AccountDTO" parameterType="Long">
+        SELECT *
+        FROM account
+        WHERE customer_id = #{customerId}
+    </select>
+    <select id="selectByCiHash" resultType="AccountDTO">
+        SELECT a.*
+        FROM account a
+        JOIN customer c ON c.customer_id = a.customer_id
+        WHERE c.ci_hash = #{ciHash}
+    </select>
+    <select id="selectByCustomerIdForUpdate" resultType="AccountDTO" parameterType="Long">
+        SELECT *
+        FROM account
+        WHERE customer_id = #{customerId}
+        FOR UPDATE
+    </select>
+    <select id="existsByCustomerId" resultType="boolean" parameterType="Long">
+        SELECT EXISTS (
+            SELECT 1
+            FROM account
+            WHERE customer_id = #{customerId}
+        )
+    </select>
+    <insert id="insertApplication" parameterType="AccountDTO">
+        INSERT INTO account (
+            customer_id,
+            account_no,
+            status,
+            opened_at,
+            created_at,
+            limit_amount,
+            amount,
+            benefit
+        ) VALUES (
+            #{customerId},
+            NULL,
+            'APPLIED',
+            NULL,
+            #{createdAt},
+            #{limitAmount},
+            0,
+            NULL
+        )
+    </insert>
+    <update id="reapply" parameterType="AccountDTO">
+        UPDATE account
+        SET status = 'APPLIED',
+        limit_amount = #{limitAmount}
+        WHERE account_id = #{accountId}
+        AND status = 'REJECTED'
+        AND account_no IS NULL
+        AND opened_at IS NULL
+    </update>
+    <update id="updateLimit">
+        UPDATE account
+        SET limit_amount = #{newLimitAmount}
+        WHERE account_id = #{accountId}
+        AND status = #{status}
+        AND status IN ('APPLIED', 'OPENED')
+        AND limit_amount = #{expectedCurrentLimit}
+    </update>
+    <select id="selectOwnUsedAndReservedAmount" parameterType="Long" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(
+            <include refid="com.app.maria.domain.sellorder.mapper.SellLimitMapper.usedAmountCase"/>
+        ), 0)
+        FROM sell_order so
+        INNER JOIN inbound_detail ind ON ind.inbound_detail_id = so.inbound_detail_id
+        INNER JOIN inbound i ON i.inbound_id = ind.inbound_id
+        LEFT JOIN krw_exchange ke ON ke.order_id = so.order_id
+        WHERE i.account_id = #{accountId}
+          AND so.status IN ('RECEIVED', 'EXECUTED')
+    </select>
+    <update id="approve" parameterType="AccountDTO">
+        UPDATE account
+        SET status = 'OPENED',
+        account_no = #{accountNo},
+        opened_at = #{openedAt},
+        benefit = 'POSSIBLE'
+        WHERE account_id = #{accountId}
+        AND status = 'APPLIED'
+        AND limit_amount = #{limitAmount}
+        AND account_no IS NULL
+        AND opened_at IS NULL
+    </update>
+    <update id="reject" parameterType="AccountDTO">
+        UPDATE account
+        SET status = 'REJECTED'
+        WHERE account_id = #{accountId}
+        AND status = 'APPLIED'
+        AND account_no IS NULL
+        AND opened_at IS NULL
+    </update>
+    <select id="selectAllAccount" resultType="accountDTO">
+        SELECT
+        *
+        FROM account
+        ORDER BY customer_id DESC
+    </select>
+    <select id="selectAccountList" resultType="AccountJoinDTO">
+        SELECT
+            a.account_id AS accountId,
+            a.customer_id AS customerId,
+            c.name AS customerName,
+            a.account_no AS accountNo,
+            a.status,
+            a.limit_amount AS limitAmount,
+            COALESCE(SUM(
+                <include refid="com.app.maria.domain.sellorder.mapper.SellLimitMapper.usedAmountCase"/>
+            ), 0) AS usedAmount,
+            a.amount,
+            a.created_at AS createdAt,
+            a.opened_at AS openedAt,
+            a.benefit
+        FROM account a
+        JOIN customer c ON c.customer_id = a.customer_id
+        LEFT JOIN sell_order so ON so.account_id = a.account_id AND so.status IN ('RECEIVED', 'EXECUTED')
+        LEFT JOIN krw_exchange ke ON ke.order_id = so.order_id
+        GROUP BY a.account_id, a.customer_id, c.name, a.account_no, a.status, a.limit_amount,
+                 a.amount, a.created_at, a.opened_at, a.benefit
+        ORDER BY a.created_at DESC, a.account_id DESC
+    </select>
+    <update id="overrideToOpened" parameterType="AccountDTO">
+        UPDATE account
+        SET status = 'OPENED',
+        account_no = #{accountNo},
+        opened_at = #{openedAt},
+        benefit = 'POSSIBLE'
+        WHERE account_id = #{accountId}
+        AND status = 'REJECTED'
+        AND account_no IS NULL
+        AND opened_at IS NULL
+    </update>
+    <update id="updateBenefitToImpossible">
+        UPDATE account
+        SET benefit = 'IMPOSSIBLE'
+        WHERE account_id = #{accountId}
+        AND benefit IN('POSSIBLE','REDUCED')
+    </update>
+
+    <!-- 현재 상태가 expectedStatus일 때만 바꾼다. 조회-판정 사이에 다른 요청이
+         상태를 바꿨으면 0행이 되어 호출부가 알아챌 수 있다. -->
+    <update id="updateBenefit">
+        UPDATE account
+        SET benefit = #{newStatus}
+        WHERE account_id = #{accountId}
+        <choose>
+            <when test="expectedStatus == null">
+                AND benefit IS NULL
+            </when>
+            <otherwise>
+                AND benefit = #{expectedStatus}
+            </otherwise>
+        </choose>
+    </update>
+
+    <select id="selectCiHashByCustomerId" parameterType="Long" resultType="String">
+        SELECT
+        ci_hash
+        FROM customer
+        WHERE customer_id = #{customerId}
+    </select>
+
+    <select id="selectLatestConsent" resultType="Boolean">
+        SELECT agreed
+        FROM customer_consent
+        WHERE customer_id = #{customerId}
+          AND consent_type = #{consentType}
+        <!-- changed_at은 옮길 수 있는 업무시계라 순서 기준으로 쓰지 않는다. 가장 늦게 쌓인 행이 현재 값이다 -->
+        ORDER BY customer_consent_id DESC
+        LIMIT 1
+    </select>
+
+    <insert id="insertConsent">
+        INSERT INTO customer_consent (customer_id, consent_type, agreed, changed_at)
+        VALUES (#{customerId}, #{consentType}, #{agreed}, #{changedAt})
+    </insert>
+
+    <update id="updateProvisionalAmount" parameterType="AccountDTO">
+        UPDATE account
+        SET amount = amount + #{amount}
+        WHERE account_id = #{accountId}
+        AND status IN ('OPENED', 'CLOSURE_REQUESTED')
+    </update>
+
+    <select id="countByStatus" resultType="int">
+        SELECT COUNT(*)
+        FROM account
+        WHERE status = #{status}
+    </select>
+
+    <select id="countAccountsRequiringAction" resultType="int">
+        SELECT COUNT(*)
+        FROM account
+        WHERE status IN ('APPLIED', 'CLOSURE_REQUESTED')
+    </select>
+
+    <select id="selectAccountLimitUsage" resultType="AccountLimitUsageDTO">
+        SELECT
+        a.account_id     AS accountId,
+        a.account_no     AS accountNo,
+        c.name           AS customerName,
+        a.status         AS status,
+        a.limit_amount   AS limitAmount,
+        COALESCE(SUM(
+            <include refid="com.app.maria.domain.sellorder.mapper.SellLimitMapper.usedAmountCase"/>
+        ), 0) AS usedAmount
+        FROM account a
+        JOIN customer c ON c.customer_id = a.customer_id
+        LEFT JOIN sell_order so ON so.account_id = a.account_id AND so.status IN ('RECEIVED', 'EXECUTED')
+        LEFT JOIN krw_exchange ke ON ke.order_id = so.order_id
+        WHERE a.status = 'OPENED'
+        GROUP BY a.account_id, a.account_no, c.name, a.status, a.limit_amount
+    </select>
+
+    <select id="selectAppliedAccounts" resultType="AccountLimitUsageDTO">
+        SELECT
+        a.account_id   AS accountId,
+        a.account_no   AS accountNo,
+        c.name         AS customerName,
+        a.status       AS status,
+        a.limit_amount AS limitAmount,
+        0              AS usedAmount
+        FROM account a
+        JOIN customer c ON c.customer_id = a.customer_id
+        WHERE a.status = 'APPLIED'
+    </select>
+
+    <select id="searchAccounts" parameterType="AccountSearchDTO" resultType="AccountLimitUsageDTO">
+        SELECT
+        a.account_id     AS accountId,
+        a.account_no     AS accountNo,
+        c.name           AS customerName,
+        a.status         AS status,
+        a.limit_amount   AS limitAmount,
+        COALESCE(SUM(
+            <include refid="com.app.maria.domain.sellorder.mapper.SellLimitMapper.usedAmountCase"/>
+        ), 0) AS usedAmount
+        FROM account a
+        JOIN customer c ON c.customer_id = a.customer_id
+        LEFT JOIN sell_order so ON so.account_id = a.account_id AND so.status IN ('RECEIVED', 'EXECUTED')
+        LEFT JOIN krw_exchange ke ON ke.order_id = so.order_id
+        <where>
+            AND a.status = 'OPENED'
+            <if test="accountNo != null and accountNo != ''">
+                AND a.account_no LIKE CONCAT('%', #{accountNo}, '%')
+            </if>
+            <if test="customerName != null and customerName != ''">
+                AND c.name LIKE CONCAT('%', #{customerName}, '%')
+            </if>
+        </where>
+        GROUP BY a.account_id, a.account_no, c.name, a.status, a.limit_amount
+    </select>
+
+    <!--해지로 상태변경-->
+    <update id="requestClosure">
+        UPDATE account
+        SET status = 'CLOSURE_REQUESTED'
+        WHERE account_id = #{accountId}
+        AND status = 'OPENED'
+    </update>
+
+    <!--해지 반려시 재오픈 -->
+    <update id="reopenAfterClosureRejection">
+        UPDATE account
+        SET status = 'OPENED'
+        WHERE account_id = #{accountId}
+        AND status = 'CLOSURE_REQUESTED'
+    </update>
+
+    <update id="completeClosure">
+        UPDATE account
+        SET status = 'CLOSED'
+        WHERE account_id = #{accountId}
+        AND status = 'CLOSURE_REQUESTED'
+        AND amount = 0
+    </update>
+
+    <!-- APPLIED/REJECTED는 매도건이 존재할 수 없어 제외된다. -->
+    <select id="selectOpenedAccountsAfter" resultType="AccountDTO">
+        select
+            account_id,
+            benefit
+        from account
+        where opened_at is not null
+            and account_id > #{lastAccountId}
+        order by account_id
+        limit #{pageSize}
+    </select>
+
+    <select id="selectManagementHoldings" resultType="com.app.maria.domain.account.dto.response.AccountManagementDetailResponseDTO$Holding">
+        SELECT fp.ticker, fp.name AS productName, fp.market, fp.currency,
+               SUM(id.current_qty) AS currentQty
+        FROM inbound_detail id
+        JOIN inbound i ON i.inbound_id = id.inbound_id
+        JOIN foreign_product fp ON fp.foreign_product_id = id.foreign_product_id
+        WHERE i.account_id = #{accountId} AND id.current_qty &gt; 0
+        GROUP BY fp.foreign_product_id, fp.ticker, fp.name, fp.market, fp.currency
+        ORDER BY fp.ticker
+    </select>
+
+    <select id="selectManagementInbounds" resultType="com.app.maria.domain.account.dto.response.AccountManagementDetailResponseDTO$Inbound">
+        SELECT i.inbound_id AS inboundId, fp.ticker, fp.name AS productName,
+               id.source_broker AS sourceBroker, id.qty, id.current_qty AS currentQty,
+               id.purchase_date AS purchaseDate, id.recorded_at AS recordedAt
+        FROM inbound i
+        JOIN inbound_detail id ON id.inbound_id = i.inbound_id
+        JOIN foreign_product fp ON fp.foreign_product_id = id.foreign_product_id
+        WHERE i.account_id = #{accountId}
+        ORDER BY id.recorded_at DESC, id.inbound_detail_id DESC
+    </select>
+
+    <select id="selectLatestManagementClosure" resultType="com.app.maria.domain.account.dto.response.AccountManagementDetailResponseDTO$Closure">
+        SELECT closure_request_id AS closureRequestId, status, requested_at AS requestedAt,
+               processed_at AS processedAt, rejection_reason AS rejectionReason
+        FROM account_closure_request
+        WHERE account_id = #{accountId}
+        ORDER BY requested_at DESC, closure_request_id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectManagementWithdrawals" resultType="com.app.maria.domain.account.dto.response.AccountManagementDetailResponseDTO$Withdrawal">
+        SELECT withdrawal_id AS withdrawalId, requested_amount AS requestedAmount,
+               destination_account_no AS destinationAccountNo, status, processed_at AS processedAt
+        FROM withdrawal
+        WHERE account_id = #{accountId}
+        ORDER BY processed_at DESC, withdrawal_id DESC
+    </select>
+</mapper>

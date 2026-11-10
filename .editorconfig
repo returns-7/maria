@@ -1,0 +1,8 @@
+root = true
+
+# 맥/윈도우 혼용 환경에서 인코딩 오판으로 한글이 깨지는 사고 방지.
+# IntelliJ는 이 설정을 프로젝트 인코딩 설정보다 우선 적용한다.
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true

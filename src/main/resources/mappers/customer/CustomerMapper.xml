@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.app.maria.domain.customer.mapper.CustomerMapper">
+
+    <!-- 한 번이라도 개설된 계좌(해지 포함)의 고객까지 감시 대상 — APPLIED/REJECTED만 제외 -->
+    <select id="selectRiaMonitoringCustomers" resultType="CustomerCiHashDTO">
+        SELECT c.customer_id, c.ci_hash
+        FROM customer c
+        JOIN account a ON a.customer_id = c.customer_id
+        WHERE a.opened_at IS NOT NULL
+    </select>
+
+    <select id="searchEligibleCustomersByName" resultType="CustomerSearchDTO">
+        SELECT c.customer_id, c.name, c.birth_date, c.phone, c.investor_type
+        FROM customer c
+        WHERE c.name LIKE CONCAT(#{name}, '%')
+          AND NOT EXISTS (
+              SELECT 1
+              FROM account a
+              WHERE a.customer_id = c.customer_id
+          )
+        ORDER BY CASE WHEN c.name = #{name} THEN 0 ELSE 1 END,
+                 c.created_at DESC,
+                 c.customer_id DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

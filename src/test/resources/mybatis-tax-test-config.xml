@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE configuration
+        PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-config.dtd">
+
+<configuration>
+    <settings>
+        <setting name="mapUnderscoreToCamelCase" value="true"/>
+    </settings>
+
+    <typeAliases>
+        <typeAlias alias="SellLotDTO" type="com.app.maria.domain.tax.dto.SellLotDTO"/>
+        <typeAlias alias="TaxRuleDTO" type="com.app.maria.domain.tax.dto.TaxRuleDTO"/>
+        <typeAlias alias="ExternalBuyDTO" type="com.app.maria.domain.tax.dto.ExternalBuyDTO"/>
+        <typeAlias alias="TaxCalculationDTO" type="com.app.maria.domain.tax.dto.TaxCalculationDTO"/>
+        <typeAlias alias="TaxSnapshotDTO" type="com.app.maria.domain.tax.dto.TaxSnapshotDTO"/>
+        <typeAlias alias="HeldLotDTO" type="com.app.maria.domain.tax.dto.HeldLotDTO"/>
+    </typeAliases>
+
+    <environments default="tax-mapper-test">
+        <environment id="tax-mapper-test">
+            <transactionManager type="JDBC"/>
+            <dataSource type="POOLED">
+                <property name="driver" value="org.h2.Driver"/>
+                <property name="url" value="jdbc:h2:mem:tax_mapper_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE"/>
+                <property name="username" value="sa"/>
+                <property name="password" value=""/>
+            </dataSource>
+        </environment>
+    </environments>
+
+    <mappers>
+        <mapper resource="mappers/tax/TaxMapper.xml"/>
+        <mapper resource="mappers/tax/TaxSnapshotMapper.xml"/>
+    </mappers>
+</configuration>

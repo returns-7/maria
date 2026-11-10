@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.app.maria.global.clock.mapper.SystemClockMapper">
+    <select id="selectSystemClock" resultType="com.app.maria.global.clock.dto.SystemClockDTO">
+        SELECT
+        clock_id,
+        current_datetime AS base_datetime,
+        reference_real_datetime,
+        TIMESTAMPADD(
+        SECOND,
+        TIMESTAMPDIFF(
+        SECOND,
+        reference_real_datetime,
+        CURRENT_TIMESTAMP
+        ),
+        current_datetime
+        ) AS current_datetime
+        FROM system_clock
+        WHERE clock_id = 1
+    </select>
+
+    <update id="updateSystemClock">
+        UPDATE system_clock
+        SET current_datetime = #{newDatetime},
+        reference_real_datetime = CURRENT_TIMESTAMP
+        WHERE clock_id = 1
+        AND reference_real_datetime = #{expectedReferenceRealDatetime}
+    </update>
+
+</mapper>

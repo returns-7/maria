@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.app.maria.domain.sellorder.mapper.SellOrderMapper">
+
+    <insert id="insertSellOrder" parameterType="SellOrderDTO" useGeneratedKeys="true" keyProperty="orderId" keyColumn="ORDER_ID">
+        INSERT INTO sell_order (inbound_detail_id, account_id, foreign_product_id, sell_qty, base_price, settlement_fx_rate, status, processed_at)
+        VALUES (#{inboundDetailId}, #{accountId}, #{foreignProductId}, #{sellQty}, #{basePrice}, #{settlementFxRate}, #{status}, #{processedAt})
+    </insert>
+
+    <select id="selectSellOrderById" parameterType="Long" resultType="SellOrderDTO">
+        SELECT order_id, inbound_detail_id, account_id, foreign_product_id, sell_qty, base_price, settlement_fx_rate, status, processed_at
+        FROM sell_order
+        WHERE order_id = #{orderId}
+    </select>
+
+    <select id="selectSellOrdersByAccountId" parameterType="Long" resultType="SellOrderDTO">
+        SELECT order_id, inbound_detail_id, account_id, foreign_product_id, sell_qty, base_price, settlement_fx_rate, status, processed_at
+        FROM sell_order
+        WHERE account_id = #{accountId}
+    </select>
+
+    <select id="selectSellOrdersByInboundDetailIds" resultType="SellOrderDTO">
+        SELECT order_id, inbound_detail_id, account_id, foreign_product_id, sell_qty, base_price, settlement_fx_rate, status, processed_at
+        FROM sell_order
+        WHERE inbound_detail_id IN
+        <foreach item="inboundDetailId" collection="inboundDetailIds" open="(" separator="," close=")">
+            #{inboundDetailId}
+        </foreach>
+        ORDER BY inbound_detail_id, processed_at ASC
+    </select>
+
+    <select id="sumSellAmountBetween" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(sell_qty * base_price), 0)
+        FROM sell_order
+        WHERE processed_at >= #{start} AND processed_at &lt; #{end}
+        AND status IN ('RECEIVED', 'EXECUTED')
+    </select>
+
+    <sql id="sellOrderHistoryFilter">
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (acc.account_no LIKE CONCAT('%',#{keyword},'%') OR c.name LIKE CONCAT('%',#{keyword},'%'))
+            </if>
+            <if test="status != null and status != ''">AND s.status = #{status}</if>
+            <if test="startDate != null">AND s.processed_at &gt;= #{startDate}</if>
+            <if test="endDate != null">AND s.processed_at &lt;= #{endDate}</if>
+        </where>
+    </sql>
+
+    <select id="selectSellOrderHistory" resultType="SellOrderHistoryDTO">
+        SELECT s.order_id, s.sell_qty, s.base_price, s.processed_at, s.status,
+            krw.provisional_amount, krw.final_amount, acc.account_no, c.name AS customerName, fp.ticker, fp.name AS name
+        FROM sell_order s LEFT JOIN krw_exchange krw ON krw.order_id = s.order_id
+            LEFT JOIN account acc ON acc.account_id = s.account_id
+            LEFT JOIN customer c ON c.customer_id = acc.customer_id
+            LEFT JOIN foreign_product fp ON fp.foreign_product_id = s.foreign_product_id
+        <include refid="sellOrderHistoryFilter"/>
+        ORDER BY ${orderBy}
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countSellOrderHistory" resultType="int">
+        SELECT COUNT(*)
+        FROM sell_order s
+        LEFT JOIN account acc ON acc.account_id = s.account_id
+        LEFT JOIN customer c ON c.customer_id = acc.customer_id
+        <include refid="sellOrderHistoryFilter"/>
+    </select>
+
+    <select id="selectSellOrderDetail" parameterType="Long" resultType="SellOrderDetailDTO">
+        SELECT s.order_id, acc.account_no, c.name AS customerName, fp.ticker, fp.name AS name,
+            s.sell_qty, s.base_price, s.settlement_fx_rate, s.processed_at, s.status,
+            krw.provisional_amount, krw.provisional_at, krw.final_rate, krw.final_amount, krw.final_at,
+            krw.settlement_status,
+            ind.source_broker, ind.purchase_date, ind.purchase_price, ind.purchase_currency
+        FROM sell_order s
+            LEFT JOIN account acc ON acc.account_id = s.account_id
+            LEFT JOIN customer c ON c.customer_id = acc.customer_id
+            LEFT JOIN foreign_product fp ON fp.foreign_product_id = s.foreign_product_id
+            LEFT JOIN krw_exchange krw ON krw.order_id = s.order_id
+            LEFT JOIN inbound_detail ind ON ind.inbound_detail_id = s.inbound_detail_id
+        WHERE s.order_id = #{orderId}
+    </select>
+
+</mapper>

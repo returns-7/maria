@@ -1,0 +1,13 @@
+package com.app.maria.domain.settlement.type;
+
+public enum SettlementFailureCode {
+    EXCHANGE_RATE_NOT_FOUND,
+    EXTERNAL_API_ERROR,
+    EXCHANGE_NOT_FOUND,
+    INVALID_ORDER_STATUS,
+    ACCOUNT_NOT_FOUND,
+    ACCOUNT_MISMATCH,
+    CALCULATION_ERROR,
+    DB_STATE_CONFLICT,
+    UNKNOWN_ERROR
+}

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.app.maria.domain.settlement.mapper.KrwExchangeMapper">
+
+    <select id="selectExchangeById" parameterType="Long" resultType="KrwExchangeDTO">
+        SELECT
+            exchange_id,
+            account_id,
+            order_id,
+            provisional_amount,
+            provisional_at,
+            final_rate,
+            final_amount,
+            final_at,
+            settlement_status
+        FROM krw_exchange
+        WHERE exchange_id = #{exchangeId}
+    </select>
+
+    <select id="selectExchangeByIdForUpdate" parameterType="Long" resultType="KrwExchangeDTO">
+        SELECT
+            exchange_id,
+            account_id,
+            order_id,
+            provisional_amount,
+            provisional_at,
+            final_rate,
+            final_amount,
+            final_at,
+            settlement_status
+        FROM krw_exchange
+        WHERE exchange_id = #{exchangeId}
+        FOR UPDATE
+    </select>
+
+    <select id="selectAccountAmountForUpdate" parameterType="Long" resultType="java.math.BigDecimal">
+        SELECT amount
+        FROM account
+        WHERE account_id = #{accountId}
+        FOR UPDATE
+    </select>
+
+    <update id="finalizeExchange" parameterType="KrwExchangeDTO">
+        UPDATE krw_exchange
+        SET final_rate = #{finalRate},
+            final_amount = #{finalAmount},
+            settlement_status = 'FINALIZED'
+        WHERE exchange_id = #{exchangeId}
+          AND settlement_status = 'PROVISIONAL'
+    </update>
+
+    <update id="replaceAccountAmount" parameterType="KrwExchangeDTO">
+        UPDATE account
+        SET amount = amount - #{provisionalAmount} + #{finalAmount}
+        WHERE account_id = #{accountId}
+          AND status IN ('OPENED', 'CLOSURE_REQUESTED')
+    </update>
+
+    <insert id="insertLeftAmount" parameterType="KrwExchangeDTO">
+        INSERT INTO left_amount (
+            exchange_id,
+            cur_amount
+        ) VALUES (
+            #{exchangeId},
+            #{finalAmount}
+        )
+    </insert>
+
+    <insert id="insertProvisional" parameterType="KrwExchangeDTO">
+        INSERT INTO krw_exchange (
+            account_id,
+            order_id,
+            provisional_amount,
+            provisional_at,
+            final_at,
+            settlement_status
+        )
+        VALUES (
+            #{accountId},
+            #{orderId},
+            #{provisionalAmount},
+            #{provisionalAt},
+            #{finalAt},
+            'PROVISIONAL'
+        )
+    </insert>
+
+    <select id="countByStatus" resultType="int">
+        SELECT COUNT(*)
+        FROM krw_exchange
+        WHERE settlement_status = #{settlementStatus}
+    </select>
+
+    <select id="sumProvisionalAmountByStatus" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(provisional_amount), 0)
+        FROM krw_exchange
+        WHERE settlement_status = #{settlementStatus}
+    </select>
+
+    <select id="sumFinalizedAmountBetween" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(final_amount), 0)
+        FROM krw_exchange
+        WHERE final_at >= #{start} AND final_at &lt; #{end}
+          AND settlement_status = 'FINALIZED'
+    </select>
+
+</mapper>

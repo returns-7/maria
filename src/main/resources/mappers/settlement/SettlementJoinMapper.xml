@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.app.maria.domain.settlement.mapper.SettlementJoinMapper">
+
+    <select id="selectTargetByItemId" parameterType="SettlementJoinDTO" resultType="SettlementJoinDTO">
+        SELECT
+            si.item_id,
+            si.batch_id,
+            si.result,
+            si.processed_at,
+            si.failure_code,
+            si.failure_message,
+            ke.exchange_id,
+            ke.account_id,
+            ke.order_id,
+            ke.provisional_amount,
+            ke.provisional_at,
+            ke.final_rate,
+            ke.final_amount,
+            ke.final_at,
+            ke.settlement_status,
+            a.account_no,
+            fp.ticker,
+            fp.name AS product_name,
+            so.settlement_fx_rate,
+            so.status AS sell_order_status,
+            ind.purchase_currency
+        FROM settlement_item si
+        INNER JOIN krw_exchange ke
+            ON ke.exchange_id = si.exchange_id
+        INNER JOIN sell_order so
+            ON so.order_id = ke.order_id
+        INNER JOIN account a
+            ON a.account_id = ke.account_id
+        INNER JOIN foreign_product fp
+            ON fp.foreign_product_id = so.foreign_product_id
+        INNER JOIN inbound_detail ind
+            ON ind.inbound_detail_id = so.inbound_detail_id
+        WHERE si.batch_id = #{batchId}
+          AND si.item_id = #{itemId}
+          AND si.result IS NULL
+          AND so.status = 'EXECUTED'
+    </select>
+
+    <select id="selectItemDetail" parameterType="SettlementJoinDTO" resultType="SettlementJoinDTO">
+        SELECT
+            si.item_id,
+            si.batch_id,
+            si.result,
+            si.processed_at,
+            si.failure_code,
+            si.failure_message,
+            ke.exchange_id,
+            ke.account_id,
+            ke.order_id,
+            ke.provisional_amount,
+            ke.provisional_at,
+            ke.final_rate,
+            ke.final_amount,
+            ke.final_at,
+            ke.settlement_status,
+            a.account_no,
+            fp.ticker,
+            fp.name AS product_name,
+            so.settlement_fx_rate,
+            so.status AS sell_order_status,
+            ind.purchase_currency
+        FROM settlement_item si
+        INNER JOIN krw_exchange ke
+            ON ke.exchange_id = si.exchange_id
+        INNER JOIN sell_order so
+            ON so.order_id = ke.order_id
+        INNER JOIN account a
+            ON a.account_id = ke.account_id
+        INNER JOIN foreign_product fp
+            ON fp.foreign_product_id = so.foreign_product_id
+        INNER JOIN inbound_detail ind
+            ON ind.inbound_detail_id = so.inbound_detail_id
+        WHERE si.batch_id = #{batchId}
+          AND si.item_id = #{itemId}
+    </select>
+
+    <select id="selectSettlementBatchDetail" parameterType="Long" resultType="SettlementJoinDTO">
+        SELECT
+            si.item_id,
+            si.batch_id,
+            si.result,
+            si.processed_at,
+            si.failure_code,
+            si.failure_message,
+            ke.exchange_id,
+            ke.account_id,
+            ke.order_id,
+            ke.provisional_amount,
+            ke.provisional_at,
+            ke.final_rate,
+            ke.final_amount,
+            ke.final_at,
+            ke.settlement_status,
+            a.account_no,
+            fp.ticker,
+            fp.name AS product_name,
+            so.settlement_fx_rate,
+            so.status AS sell_order_status,
+            ind.purchase_currency
+        FROM settlement_item si
+        JOIN krw_exchange ke
+            ON ke.exchange_id = si.exchange_id
+        JOIN sell_order so
+            ON so.order_id = ke.order_id
+        JOIN account a
+            ON a.account_id = ke.account_id
+        JOIN foreign_product fp
+            ON fp.foreign_product_id = so.foreign_product_id
+        JOIN inbound_detail ind
+            ON ind.inbound_detail_id = so.inbound_detail_id
+        WHERE si.batch_id = #{batchId}
+    </select>
+
+    <select id="selectSettlementBatchFailDetail" parameterType="Long" resultType="SettlementJoinDTO">
+        SELECT
+            si.item_id,
+            si.batch_id,
+            si.result,
+            si.processed_at,
+            si.failure_code,
+            si.failure_message,
+            ke.exchange_id,
+            ke.account_id,
+            ke.order_id,
+            ke.provisional_amount,
+            ke.provisional_at,
+            ke.final_rate,
+            ke.final_amount,
+            ke.final_at,
+            ke.settlement_status,
+            a.account_no,
+            fp.ticker,
+            fp.name AS product_name,
+            so.settlement_fx_rate,
+            so.status AS sell_order_status,
+            ind.purchase_currency
+        FROM settlement_item si
+        JOIN krw_exchange ke
+            ON ke.exchange_id = si.exchange_id
+        JOIN sell_order so
+            ON so.order_id = ke.order_id
+        JOIN account a
+            ON a.account_id = ke.account_id
+        JOIN foreign_product fp
+            ON fp.foreign_product_id = so.foreign_product_id
+        JOIN inbound_detail ind
+            ON ind.inbound_detail_id = so.inbound_detail_id
+        WHERE si.batch_id = #{batchId}
+            AND si.result = 'FAILED';
+    </select>
+
+</mapper>
