@@ -15,10 +15,17 @@ MARIA.fmt = MARIA.fmt || {};
 MARIA.fmt.hyphenateAccountNo = function (accountNo) {
     if (!accountNo) return "-";
     var no = String(accountNo);
-    return /^\d{10}$/.test(no) ? no.slice(0, 3) + "-" + no.slice(3) : no;
+    return /^\d{10}$/.test(no) ? no.slice(0, 3) + "-***" + no.slice(6) : no;
 };
 MARIA.fmt.accountNoHtml = function (accountNo) {
     return '<span class="account-no-fmt">' + MARIA.fmt.hyphenateAccountNo(accountNo) + '</span>';
+};
+MARIA.fmt.maskName = function (name) {
+    if (!name) return name || "";
+    var s = String(name);
+    if (s.length <= 1) return s;
+    if (s.length === 2) return s[0] + "*";
+    return s[0] + "*".repeat(s.length - 2) + s[s.length - 1];
 };
 
 MARIA.ui.showError = function (message) {
@@ -672,11 +679,11 @@ $(function () {
             $("#adminRole").text(roleLabel).prop("hidden", false);
         }
 
-        var isAdmin = admin.role === "ADMIN";
+        var canChangeClock = admin.role === "ADMIN" || admin.role === "SETTLEMENT";
         $("#clockButton")
-            .prop("disabled", !isAdmin)
-            .toggleClass("is-editable", isAdmin)
-            .attr("title", isAdmin ? "시스템 업무시각 설정" : "업무시각 조회");
+            .prop("disabled", !canChangeClock)
+            .toggleClass("is-editable", canChangeClock)
+            .attr("title", canChangeClock ? "시스템 업무시각 설정" : "업무시각 조회");
 
         applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light");
         loadReferenceTime();
@@ -698,7 +705,7 @@ $(function () {
         }, 1000);
 
         $("#clockButton").on("click", function () {
-            if (!isAdmin || !currentBusinessTime) {
+            if (!canChangeClock || !currentBusinessTime) {
                 return;
             }
 
