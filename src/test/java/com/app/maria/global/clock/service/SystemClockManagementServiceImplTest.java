@@ -99,7 +99,8 @@ class SystemClockManagementServiceImplTest {
         assertThat(savedLog.getBeforeValue()).isEqualTo(currentDatetime.toString());
         assertThat(savedLog.getAfterValue()).isEqualTo(newDatetime.toString());
         assertThat(savedLog.getReasonCode()).isEqualTo(reasonCode);
-        assertThat(savedLog.getProcessedAt()).isEqualTo(newDatetime);
+        // 변경 기록의 처리 시각은 옮기기 전 업무시각이다(옮긴 뒤 시각이 아니다)
+        assertThat(savedLog.getProcessedAt()).isEqualTo(currentDatetime).isNotEqualTo(newDatetime);
         assertThat(result).isEqualTo(newDatetime);
 
         InOrder callOrder = inOrder(systemClockMapper, auditLogService);

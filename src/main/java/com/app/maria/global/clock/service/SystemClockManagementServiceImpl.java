@@ -50,7 +50,8 @@ public class SystemClockManagementServiceImpl implements SystemClockManagementSe
                         .beforeValue(currentClock.getCurrentDatetime().toString())
                         .afterValue(newDatetime.toString())
                         .reasonCode(reasonCode)
-                        .processedAt(newDatetime)
+                        // 시계를 옮기는 일이 일어난 시각은 옮기기 전 업무시각이다. 옮긴 뒤 시각을 쓰면 과거로 돌릴 때 기록이 과거 날짜로 찍힌다
+                        .processedAt(currentClock.getCurrentDatetime())
                         .build();
         auditLogService.log(auditLog);
 

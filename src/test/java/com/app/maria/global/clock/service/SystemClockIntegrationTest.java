@@ -148,8 +148,9 @@ class SystemClockIntegrationTest {
             assertThat(beforeValue).isBetween(INITIAL_DATETIME, INITIAL_DATETIME.plusSeconds(2));
             assertThat(resultSet.getString("after_value")).isEqualTo(requestedDatetime.toString());
             assertThat(resultSet.getString("reason_code")).isEqualTo(reasonCode);
+            // 처리 시각은 옮기기 전 업무시각이다(옮긴 뒤 시각이 아니다)
             assertThat(resultSet.getObject("processed_at", LocalDateTime.class))
-                    .isBetween(requestedDatetime, requestedDatetime.plusSeconds(2));
+                    .isBetween(INITIAL_DATETIME, INITIAL_DATETIME.plusSeconds(2));
             assertThat(resultSet.next()).isFalse();
         }
     }
